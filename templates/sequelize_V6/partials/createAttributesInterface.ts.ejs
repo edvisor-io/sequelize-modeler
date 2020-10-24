@@ -1,0 +1,16 @@
+<%_
+const optionalAttributes = []
+table.columns.forEach((column, columnName) => {
+  if (column.primaryKey || column.allowNull || columnName === 'created') optionalAttributes.push(columnName)
+})
+
+if (_.isEmpty[optionalAttributes]) { -%>
+type <%= createAttributeInterfaceName %> = <%= attributesInterfaceName %>
+<%_ } else { -%>
+interface <%= createAttributeInterfaceName %> extends Optional<<%= attributesInterfaceName %>,
+  <%_ optionalAttributes.forEach((columnName, columnIndex) => { -%>
+  '<%= changeCase.camelCase(columnName) %>'<%_ if (columnIndex < optionalAttributes.length - 1) { -%> |
+  <%_ }
+  }) -%>
+> {}
+<%_ } -%>

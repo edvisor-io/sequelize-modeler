@@ -1,0 +1,21 @@
+<%
+if (!_.some(Array.from(table.columns.values()), (column) => !!column.reference)) skipFile()
+
+setOutputFileName(`gen/associations/${changeCase.paramCase(table.name)}.ts`)
+
+const modelName = changeCase.pascalCase(table.name)
+%>
+import { SequelizeModels } from '../models'
+
+export default (models: SequelizeModels) => {
+<%_ 
+  table.columns.forEach((column, columnName) => {
+    if (_.isEmpty(column.reference)) return
+    
+    const { tableName: referencingTable, key: foreignKey } = column.reference -%> 
+  models.<%= modelName %>.belongsTo(models.<%= changeCase.pascalCase(referencingTable) %>, {
+    as: '<%= changeCase.camelCase(referencingTable) %>',
+    foreignKey: '<%= foreignKey %>'
+  })
+<%_ }) -%> 
+}

@@ -1,0 +1,4 @@
+node_modules
+
+modeler-config.*
+!modeler-config.json

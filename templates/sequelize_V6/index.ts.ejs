@@ -1,0 +1,19 @@
+<%_ 
+setOutputFileName('gen/index.ts')
+tables.forEach((table) => { -%>
+import { <%= changeCase.pascalCase(table.name) %>Model } from './models/<%= changeCase.paramCase(table.name) %>'
+<%_ }) -%>
+
+export type SequelizeModels = {
+<%_ tables.forEach(table => { -%>
+  <%= changeCase.pascalCase(table.name) %>: <%= changeCase.pascalCase(table.name) %>Model
+<%_ }) -%>
+}
+
+export interface CreateableModel {
+  created: Date
+}
+
+export interface ModifiableModel {
+  modified: Date
+}

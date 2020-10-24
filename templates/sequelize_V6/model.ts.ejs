@@ -1,0 +1,89 @@
+<%
+setOutputFileName(`gen/${changeCase.paramCase(table.name)}.ts`)
+
+const modelName = changeCase.pascalCase(table.name)
+const attributesInterfaceName = `${modelName}Attributes`
+const createAttributeInterfaceName = `${modelName}CreateAttributes`
+const hasCreated = table.columns.has('created')
+const hasModified = table.columns.has('modified')
+%>
+import {
+  DataTypes,
+  InitOptions,
+  Model,
+  ModelAttributes,
+  ModelCtor,
+  Optional,
+  Sequelize,
+} from 'sequelize'
+
+<%_ if (hasCreated | hasModified) { -%>
+import {
+  <%_ if (hasCreated) { -%>
+  CreateableModel,
+  <%_ } if (hasModified) { -%>
+  ModifiableModel,
+  <%_ } -%>
+} from '.'
+<%_ } -%>
+
+<%- include('partials/modelClass.ts.ejs', {
+  table,
+  modelName,
+  attributesInterfaceName,
+  createAttributeInterfaceName
+}) %>
+
+export <%- include('partials/attributesInterface.ts.ejs', {
+  table,
+  attributesInterfaceName,
+  hasCreated,
+  hasModified
+}) %>
+
+export <%- include('partials/createAttributesInterface.ts.ejs', {
+  table,
+  attributesInterfaceName,
+  createAttributeInterfaceName
+}) %>
+
+export default function (sequelize: Sequelize) {
+  const attributes: ModelAttributes<<%= modelName %>, <%= attributesInterfaceName %>> = {
+    <%_ table.columns.forEach((column, columnName) => { -%>
+    <%= changeCase.camelCase(columnName) %>: {
+<%- include('partials/dataType.ejs', {
+  column,
+  changeCase,
+  _
+}) -%>,
+      field: '<%= changeCase.snakeCase(columnName) %>',
+      <%_ if (column.primaryKey) { -%>
+      primaryKey: true,
+      <%_ } if (column.autoIncrement) { -%>
+      autoIncrement: true,
+      <%_ } if (!column.allowNull) { -%>
+      allowNull: false,
+      <%_ } if (column.unique) { -%>
+      unique: true,
+      <%_ } if (!_.isEmpty(column.comment)) { -%>
+      comment: '<%= column.comment %>',
+      <%_ } if (!_.isEmpty(column.reference)) { -%>
+      references: <%- include('partials/reference.ejs', { reference: column.reference }) -%>
+      <%_ } -%>
+    },
+    <%_ }) -%>
+  }
+
+  const options: InitOptions<<%= modelName %>> = {
+    sequelize,
+    tableName: '<%= table.name %>',
+    timestamps: <%= (hasCreated | hasModified) ? true : false %>,
+    <%_ if (hasCreated) { -%>
+    createdAt: 'created',
+    <%_ } if (hasModified) { -%>
+    updatedAt: 'modified',
+    <%_ } -%>
+  }
+
+  <%= modelName %>.init(attributes, options)
+}

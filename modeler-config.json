@@ -1,0 +1,15 @@
+{
+  "sequelize": {
+    "username": "",
+    "password": "",
+    "database": "",
+    "host": "",
+    "dialect": ""
+  },
+  "tables": {
+    "include": [],
+    "exclude": [],
+    "templates": []
+  },
+  "templates": []
+}
