@@ -1,0 +1,28 @@
+import * as path from 'path'
+import {
+  Model,
+  Sequelize
+} from 'sequelize'
+
+import { eachFileInDir } from '../../utils'
+<%_
+setOutputFileName('models/index.ts')
+tables.forEach((table) => { -%>
+import { <%= changeCase.pascalCase(table.name) %>Ctor } from './models/<%= changeCase.paramCase(table.name) %>'
+<%_ }) -%>
+
+export default function initAllModels(sequelize: Sequelize) {
+  eachFileInDir(__dirname, file => {
+    const modelFilePath = path.join(__dirname, file)
+    const model = require(modelFilePath).default as typeof Model
+    const { init }: AppSchema<typeof Model> = require(modelFilePath).schema
+
+    init(sequelize, model)
+  })
+}
+
+export type SequelizeModels = {
+<%_ tables.forEach(table => { -%>
+  <%= changeCase.pascalCase(table.name) %>: <%= changeCase.pascalCase(table.name) %>Ctor
+<%_ }) -%>
+}

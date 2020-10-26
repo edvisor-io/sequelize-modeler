@@ -1,12 +1,12 @@
 import {
   chain,
+  defaultTo,
   drop,
   forEach,
   forOwn,
   includes,
   isNull,
-  isNumber,
-  isString,
+  isString
 } from 'lodash'
 import {
   ColumnDescription,
@@ -14,8 +14,8 @@ import {
 } from 'sequelize/types'
 
 import {
+  Association,
   EssentialColumnDescription,
-  ParsedColumnDescription,
   ParsedColumnDescriptionsByColumnName,
   ParsedColumnReference,
   ParsedColumnsDescriptionsByTableName,
@@ -37,7 +37,7 @@ export class MySqlSchemaMapper extends SchemaMapper<
 
     const parsedColumnsDescriptionsByTableName: MySqlParsedColumnsDescriptionsByTableName = new Map()
 
-    this.tableSchemasByName.forEach((schema, tableName) => {
+    await Promise.all(Array.from(this.tableSchemasByName.entries()).map((async ([tableName, schema]) => {
       const parsedDescriptionsByColumnName: MySqlParsedColumnDescriptionsByColumnName = new Map()
       const uniqueColumns = chain(schema.indexes)
         .filter((index) => index.unique && !index.primary)
@@ -52,8 +52,8 @@ export class MySqlSchemaMapper extends SchemaMapper<
         const descriptionExtras = this.mapExtraColumnDescription(description)
         const { dbType } = descriptionExtras
         const essentialDescription: EssentialColumnDescription = {
-          tsType: dbType ? (MySqlSchemaMapper.tsTypesByDbType.get(dbType) || null) : null,
-          ormType: dbType ? (MySqlSchemaMapper.ormTypesByDbType.get(dbType) || null) : null
+          tsType: dbType ? defaultTo(MySqlSchemaMapper.tsTypesByDbType.get(dbType), null) : null,
+          ormType: dbType ? defaultTo(MySqlSchemaMapper.ormTypesByDbType.get(dbType), null) : null
         }
 
         parsedDescriptionsByColumnName.set(columnName, {
@@ -67,13 +67,17 @@ export class MySqlSchemaMapper extends SchemaMapper<
 
       parsedColumnsDescriptionsByTableName.set(tableName, {
         name: tableName,
-        columns: parsedDescriptionsByColumnName
+        columns: parsedDescriptionsByColumnName,
+        associations: await this.getAccociations()
       })
-    })
+    })))
 
     return parsedColumnsDescriptionsByTableName
   }
 
+  public async getAccociations(): Promise<Association[]> {
+    return []
+  }
 
   protected extraAttributesByRegex: [RegExp, (keyof MySqlColumnDescriptionExtra)[]][] = [
     [/(^bigint)(?:\s*\(\s*(\d+)\s*\))?(?:\s*(unsigned)\s*)?/, ['dbType', 'length', 'unsigned']],
@@ -213,9 +217,6 @@ export class MySqlSchemaMapper extends SchemaMapper<
 
       const plainValues = drop(execValues.filter(isString), 1) as MySqlColumnType[]
 
-      // if (propNames.length < plainValues.length) throw new Error(
-      //   `Inproper mapping. Regex: ${typeRegex.toString()}, properties: ${propNames.join(', ')}`)
-
       forEach(plainValues, (value, index) => {
         if (isNull(value)) return
 
@@ -256,11 +257,6 @@ export class MySqlSchemaMapper extends SchemaMapper<
     return extraDescription
   }
 
-  // private isUniqe(
-  //   schema: MySqlTableMetadata,
-  //   columnName: string
-  // ): boolean {
-  // }
 
   private getReference(
     schema: MySqlTableMetadata,
@@ -349,7 +345,7 @@ type MySqlParsedColumnsDescriptionsByTableName = ParsedColumnsDescriptionsByTabl
 type MySqlParsedColumnDescriptionsByColumnName = ParsedColumnDescriptionsByColumnName<MySqlColumnDescriptionExtra>
 
 /**
- * 
+ * The extra description for each column the Mapper needs to provide, as Sequelize does not
  */
 export interface MySqlColumnDescriptionExtra {
   dbType: MySqlColumnType | null

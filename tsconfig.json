@@ -5,7 +5,7 @@
   "compilerOptions": {
     "target": "ES6",
     "module": "CommonJS",
-    "outDir": "./build",
+    "outDir": "lib",
     "strict": true,
     "noUnusedParameters": true,
     "lib": [
@@ -16,9 +16,20 @@
     "esModuleInterop": true,
     "allowSyntheticDefaultImports": true,
     "forceConsistentCasingInFileNames": true,
+    "noImplicitAny": true,
+    "noImplicitReturns": true,
+    "noImplicitThis": true,
+    "strictNullChecks": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUnusedLocals": true,
+    "noEmitOnError": false,
+    "newLine": "LF",
     "moduleResolution": "node",
     "resolveJsonModule": true,
     "isolatedModules": true,
-    "noEmit": true,
+    "noEmit": false,
+    "preserveConstEnums": true,
+    "removeComments": false,
+    "sourceMap": true,
   }
 }

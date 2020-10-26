@@ -1,0 +1,6 @@
+#!/usr/bin/env node
+const Modeler = require('../')
+
+const modeler = new Modeler()
+
+modeler.run()

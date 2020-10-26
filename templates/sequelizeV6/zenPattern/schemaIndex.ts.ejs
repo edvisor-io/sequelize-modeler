@@ -1,0 +1,19 @@
+<%_
+setOutputFileName('schema/index.ts')
+-%>
+import { Sequelize } from 'sequelize'
+
+import { SequelizeModels } from '../models'
+
+export type AppSchema<M> = {
+  init: (sequelize: Sequelize, model: M) => void,
+  associate: (models: SequelizeModels) => void
+}
+
+export interface CreateAttribute {
+  created: Date
+}
+
+export interface ModifyAttribute {
+  modified: Date
+}

@@ -20,6 +20,7 @@ import { MySqlSchemaMapper } from './MySqlSchemaMapper'
 export class SequelizeModeler {
   protected sequelize: Sequelize
   protected modelerConfig: ModelerConfig
+  protected cwd: string
 
   protected mappersByDialect = new Map<Dialect, typeof MySqlSchemaMapper>([
     ['mysql', MySqlSchemaMapper]
@@ -42,9 +43,11 @@ export class SequelizeModeler {
    */
   constructor(configFileName: string)
   constructor(config?: ModelerConfig | string) {
+    this.cwd = process.cwd()
+
     if (isNil(config) || isString(config)) {
-      const configFileName = isString(config) ? config : 'modeler-config.json'
-      const configFile: ModelerConfig | undefined = require(path.join(__dirname, '..', configFileName))
+      const configFileName = isString(config) ? config : './modeler-config.json'
+      const configFile: ModelerConfig | undefined = require(path.join(this.cwd, configFileName))
       if (!configFile) throw new Error(`${configFileName} not found`)
 
       this.sequelize = new Sequelize(configFile.sequelize)
@@ -71,6 +74,7 @@ export class SequelizeModeler {
 
     if (!!tableTemplates) {
       tableDefByTableName.forEach(async (table, tableName) => {
+        console.log();
         await this.renderTemplates(tableTemplates, { table }, tableName)
       })
     }
@@ -94,7 +98,7 @@ export class SequelizeModeler {
       const setOutputFileName = (overwriteFileName: string) => { localParams.outputFileName = overwriteFileName }
       const skipFile = () => { localParams.skipFile = true }
 
-      const modelDefTemplate = await ejs.renderFile(template, {
+      const modelDefTemplate = await ejs.renderFile(path.resolve(this.cwd, template), {
         ...renderData,
         setOutputFileName,
         skipFile,
@@ -104,7 +108,7 @@ export class SequelizeModeler {
 
       if (localParams.skipFile) return
 
-      return this.writeFile(path.join(__dirname, localParams.outputFileName), modelDefTemplate)
+      return this.writeFile(path.join(this.cwd, localParams.outputFileName), modelDefTemplate)
     }))
 
   }
@@ -120,7 +124,9 @@ export class SequelizeModeler {
           intersection(include, allTables) :
           allTables,
       exclude) :
-      allTables
+      !!include ?
+        intersection(include, allTables) :
+        allTables
   }
 
   protected writeFile = promisify(fs.writeFile)

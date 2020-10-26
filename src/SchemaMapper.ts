@@ -25,6 +25,8 @@ export abstract class SchemaMapper<
   public abstract async mapSchema(tableNames: string[]): Promise<
     ParsedColumnsDescriptionsByTableName<ColumnDescriptionExtra>>
 
+  public abstract async getAccociations(): Promise<Association[]>
+
   protected async getTableSchemas(tableNames: string[]): Promise<void> {
     const queryInterface = this.sequelize.getQueryInterface()
 

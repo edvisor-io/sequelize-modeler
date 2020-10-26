@@ -1,0 +1,89 @@
+<%
+const fileName = changeCase.paramCase(table.name)
+setOutputFileName(`schema/${fileName}.ts`)
+
+const modelName = changeCase.pascalCase(table.name)
+const attributesInterfaceName = `${modelName}Attributes`
+const createAttributeInterfaceName = `${modelName}CreateAttributes`
+const hasCreated = table.columns.has('created')
+const hasModified = table.columns.has('modified')
+%>
+import {
+  DataTypes,
+  Model,
+  Optional,
+} from 'sequelize'
+<%_ if (hasCreated | hasModified) { -%>
+
+  import {
+  <%_ if (hasCreated) { -%>
+  CreateableModel,
+  <%_ } if (hasModified) { -%>
+  ModifiableModel,
+  <%_ } -%>
+} from '.'
+<%_ } -%>
+
+import <%= modelName %> from '../models/<% fileName %>'
+import { AppSchema } from './'
+
+export <%- include('../_partials/modelClass.ts.ejs', {
+  table,
+  modelName: `${modelName}Schema`,
+  attributesInterfaceName,
+  createAttributeInterfaceName
+}) %>
+
+export <%- include('../_partials/attributesInterface.ts.ejs', {
+  table,
+  attributesInterfaceName,
+  hasCreated,
+  hasModified
+}) %>
+
+export <%- include('../_partials/createAttributesInterface.ts.ejs', {
+  table,
+  attributesInterfaceName,
+  createAttributeInterfaceName
+}) %>
+
+export const schema: AppSchema<typeof <%= modelName %>> = {
+  init: (sequelize, model) => {
+    model.init({
+    <%_ table.columns.forEach((column, columnName) => { -%>
+      <%= changeCase.camelCase(columnName) %>: {
+<%- include('../_partials/dataType.ejs', {
+  column,
+  changeCase,
+  _
+}) -%>,
+        field: '<%= changeCase.snakeCase(columnName) %>',
+        <%_ if (column.primaryKey) { -%>
+        primaryKey: true,
+        <%_ } if (column.autoIncrement) { -%>
+        autoIncrement: true,
+        <%_ } if (!column.allowNull) { -%>
+        allowNull: false,
+        <%_ } if (column.unique) { -%>
+        unique: true,
+        <%_ } if (!_.isEmpty(column.comment)) { -%>
+        comment: '<%= column.comment %>',
+        <%_ } if (!_.isEmpty(column.reference)) { -%>
+        references: <%- include('../_partials/reference.ejs', { reference: column.reference }) -%>
+        <%_ } -%>
+      },
+    <%_ }) -%>
+  }, {
+    sequelize,
+    tableName: '<%= table.name %>',
+    timestamps: <%= (hasCreated | hasModified) ? true : false %>,
+    <%_ if (hasCreated) { -%>
+    createdAt: 'created',
+    <%_ } if (hasModified) { -%>
+    updatedAt: 'modified',
+    <%_ } -%>
+  }),
+  associate: () => {
+
+  }
+}
