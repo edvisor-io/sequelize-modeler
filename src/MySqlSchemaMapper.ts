@@ -1,10 +1,8 @@
 import {
-  chain,
   defaultTo,
   drop,
   forEach,
   forOwn,
-  includes,
   isNull,
   isString
 } from 'lodash'
@@ -19,8 +17,7 @@ import {
   ParsedColumnDescriptionsByColumnName,
   ParsedColumnReference,
   ParsedColumnsDescriptionsByTableName,
-  SchemaMapper,
-  TableMetadata
+  SchemaMapper
 } from './SchemaMapper'
 
 export class MySqlSchemaMapper extends SchemaMapper<
@@ -39,13 +36,6 @@ export class MySqlSchemaMapper extends SchemaMapper<
 
     await Promise.all(Array.from(this.tableSchemasByName.entries()).map((async ([tableName, schema]) => {
       const parsedDescriptionsByColumnName: MySqlParsedColumnDescriptionsByColumnName = new Map()
-      const uniqueColumns = chain(schema.indexes)
-        .filter((index) => index.unique && !index.primary)
-        .reduce((columnNames, index) => {
-          columnNames.push(...index.fields.map((field) => field.attribute))
-          return columnNames
-        }, [] as string[])
-        .value()
 
 
       forOwn(schema.columnsDescription, (description, columnName) => {
@@ -60,8 +50,8 @@ export class MySqlSchemaMapper extends SchemaMapper<
           ...description,
           ...essentialDescription,
           ...descriptionExtras,
-          unique: includes(uniqueColumns, columnName),
-          reference: this.getReference(schema, columnName)
+          unique: this.getUniqueAttribute(columnName, schema.indexes),
+          reference: this.getReference(columnName, schema.foreignKeyReferences)
         })
       })
 
@@ -77,6 +67,30 @@ export class MySqlSchemaMapper extends SchemaMapper<
 
   public async getAccociations(): Promise<Association[]> {
     return []
+  }
+
+  protected getUniqueAttribute(columnName: string, indexes: MySqlIndexMetadata[]): string | true | undefined {
+    const uniqueIndex = indexes.find((index) => index.unique
+      && !index.primary
+      && !!index.fields.find((field) => field.attribute === columnName)
+    )
+
+
+    if (!uniqueIndex) return
+    return (uniqueIndex.fields.length === 1) ? true : uniqueIndex.name
+  }
+
+  protected getReference(
+    columnName: string,
+    foreignKeyReferences: MySqlForeignKeyReferences[],
+  ): ParsedColumnReference {
+    return foreignKeyReferences.reduce((ref, curr) => {
+      if (curr.columnName === columnName) {
+        ref.tableName = curr.referencedTableName,
+        ref.key = curr.referencedColumnName
+      }
+      return ref
+    }, {} as ParsedColumnReference)
   }
 
   protected extraAttributesByRegex: [RegExp, (keyof MySqlColumnDescriptionExtra)[]][] = [
@@ -256,20 +270,6 @@ export class MySqlSchemaMapper extends SchemaMapper<
 
     return extraDescription
   }
-
-
-  private getReference(
-    schema: MySqlTableMetadata,
-    columnName: string
-  ): ParsedColumnReference {
-    return schema.foreignKeyReferences.reduce((ref, curr) => {
-      if (curr.columnName === columnName) {
-        ref.tableName = curr.referencedTableName,
-        ref.key = curr.referencedColumnName
-      }
-      return ref
-    }, {} as ParsedColumnReference)
-  }
 }
 
 type MySqlColumnType =
@@ -311,7 +311,7 @@ type MySqlColumnType =
   'varchar' |
   'year'
 
-type MySqlTableMetadata = TableMetadata<MySqlIndexMetadata[], MySqlForeignKeyReferences[]>
+// type MySqlTableMetadata = TableMetadata<MySqlIndexMetadata[], MySqlForeignKeyReferences[]>
 
 interface MySqlIndexMetadata {
   primary: boolean
@@ -354,7 +354,7 @@ export interface MySqlColumnDescriptionExtra {
   precision?: number
   scale?: number
   enumEntries?: string[]
-  unique?: boolean
+  unique?: boolean | string
   reference?: ParsedColumnReference
   unsigned?: boolean
 }

@@ -60,15 +60,15 @@ export default function (sequelize: Sequelize) {
   changeCase,
   _
 }) -%>,
-      field: '<%= changeCase.snakeCase(columnName) %>',
+      field: '<%= columnName %>',
       <%_ if (column.primaryKey) { -%>
       primaryKey: true,
       <%_ } if (column.autoIncrement) { -%>
       autoIncrement: true,
       <%_ } if (!column.allowNull) { -%>
       allowNull: false,
-      <%_ } if (column.unique) { -%>
-      unique: true,
+      <%_ } if (!!column.unique) { -%>
+      unique: <%- (_.isString(column.unique)) ? `'${column.unique}'` : column.unique %>,
       <%_ } if (!_.isEmpty(column.comment)) { -%>
       comment: '<%= column.comment %>',
       <%_ } if (!_.isEmpty(column.reference)) { -%>
