@@ -1,47 +1,52 @@
-<%
-const fileName = changeCase.paramCase(table.name)
-setOutputFileName(`schema/${fileName}.ts`)
-
-const modelName = changeCase.pascalCase(table.name)
+<%_
+const modelName = include('_partials/modelNames.ejs', {
+  modelName: changeCase.pascalCase(table.name),
+})
 const attributesInterfaceName = `${modelName}Attributes`
 const createAttributeInterfaceName = `${modelName}CreateAttributes`
 const hasCreated = table.columns.has('created')
 const hasModified = table.columns.has('modified')
-%>
+const quote = getQuote()
+
+const fileName = changeCase.paramCase(modelName)
+setOutputFileName(`server/sequelize/schema/${fileName}.ts`)
+-%>
+-%>
+// <%= quote.text %> - <%= quote.author %>
+// Generated: <%= new Date().toLocaleDateString()  %>
+
 import {
   DataTypes,
   Model,
-  Optional,
+  Optional
 } from 'sequelize'
-<%_ if (hasCreated | hasModified) { -%>
 
-  import {
+import <%= modelName %> from '../models/<%= fileName %>'
+import {
+  AppSchema,
   <%_ if (hasCreated) { -%>
-  CreateableModel,
+  CreateAttribute,
   <%_ } if (hasModified) { -%>
-  ModifiableModel,
+  ModifyAttribute,
   <%_ } -%>
-} from '.'
-<%_ } -%>
+} from './'
 
-import <%= modelName %> from '../models/<% fileName %>'
-import { AppSchema } from './'
 
-export <%- include('../_partials/modelClass.ts.ejs', {
+export <%- include('_partials/modelClass.ts.ejs', {
   table,
   modelName: `${modelName}Schema`,
   attributesInterfaceName,
   createAttributeInterfaceName
 }) %>
 
-export <%- include('../_partials/attributesInterface.ts.ejs', {
+export <%- include('_partials/attributesInterface.ts.ejs', {
   table,
   attributesInterfaceName,
   hasCreated,
   hasModified
 }) %>
 
-export <%- include('../_partials/createAttributesInterface.ts.ejs', {
+export <%- include('_partials/createAttributesInterface.ts.ejs', {
   table,
   attributesInterfaceName,
   createAttributeInterfaceName
@@ -52,7 +57,7 @@ export const schema: AppSchema<typeof <%= modelName %>> = {
     model.init({
     <%_ table.columns.forEach((column, columnName) => { -%>
       <%= changeCase.camelCase(columnName) %>: {
-<%- include('../_partials/dataType.ejs', {
+<%- include('_partials/dataType.ejs', {
   column,
   changeCase,
   _
@@ -69,21 +74,34 @@ export const schema: AppSchema<typeof <%= modelName %>> = {
         <%_ } if (!_.isEmpty(column.comment)) { -%>
         comment: '<%= column.comment %>',
         <%_ } if (!_.isEmpty(column.reference)) { -%>
-        references: <%- include('../_partials/reference.ejs', { reference: column.reference }) -%>
+        references: <%- include('_partials/reference.ejs', { reference: column.reference }) -%>
         <%_ } -%>
       },
     <%_ }) -%>
-  }, {
-    sequelize,
-    tableName: '<%= table.name %>',
-    timestamps: <%= (hasCreated | hasModified) ? true : false %>,
-    <%_ if (hasCreated) { -%>
-    createdAt: 'created',
-    <%_ } if (hasModified) { -%>
-    updatedAt: 'modified',
-    <%_ } -%>
-  }),
-  associate: () => {
+    }, {
+      sequelize,
+      tableName: '<%= table.name %>',
+      timestamps: <%= (hasCreated | hasModified) ? true : false %>,
+      createdAt: <%- (hasCreated) ? `'created'` : false %>,
+      updatedAt: <%- (hasModified) ? `'modified'` : false %>,
+    })
+  },
+  associate: (<% if (!!table.associations.length) { %>models<% } %>) => {
+  <%_ 
+  table.associations.forEach((association) => {
+    const targetModel = include('_partials/modelNames.ejs', { modelName: changeCase.pascalCase(association.target) })
+    const throughModel = association.through && include('_partials/modelNames.ejs', { modelName: changeCase.pascalCase(association.through) })
+    const asAlias = changeCase.camelCase(targetModel) + (association.associationType.endsWith('Many') ? 's' : '')
+  -%>
+    models.<%= modelName %>.<%= association.associationType %>(models.<%= targetModel %>, {
+      foreignKey: '<%= changeCase.camelCase(association.foreignKey) %>',
+      as: '<%= asAlias %>',
+      <%_ if (!!association.through) { -%>
+      through: models.<%= throughModel %>,
+      otherKey: '<%= changeCase.camelCase(association.otherKey) %>',
+      <%_ } -%>
+    })
 
+  <%_ }) -%>
   }
 }

@@ -6,10 +6,10 @@ const extraAttributes = (ormType === 'BOOLEAN') ? {} : _(column)
   .omitBy(_.isNil)
   .value()
 -%>
-      type: DataTypes.<%= ormType %><%_
-        if (ormType === 'ENUM') { -%>(<%- column.enumEntries.map(entry => `'${entry}'`).join(', ') %>)<%
-        } else if (!_.isEmpty(extraAttributes)) { -%>({
-      <%_ _.forOwn(extraAttributes, (value, key) => { -%>
-        <%= key %>: <%- (key !== 'length' || _.isFinite(value)) ? value : `'${value}'` %>,
-      <%_ }) -%>
-      })<%_ } -%>
+        type: DataTypes.<%= ormType %><%_
+          if (ormType === 'ENUM') { -%>(<%- column.enumEntries.map(entry => `'${entry}'`).join(', ') %>)<%
+          } else if (!_.isEmpty(extraAttributes)) { -%>({
+        <%_ _.forOwn(extraAttributes, (value, key) => { -%>
+          <%= key %>: <%- (key !== 'length' || _.isFinite(value)) ? value : `'${value}'` %>,
+        <%_ }) -%>
+        })<%_ } -%>

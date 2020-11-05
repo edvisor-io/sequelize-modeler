@@ -1,6 +1,12 @@
+# transpiled JS
 lib
 
+# dependencies
 node_modules
 
+# log files
+*.log
+
+# config files
 modeler-config.*
 !modeler-config.json

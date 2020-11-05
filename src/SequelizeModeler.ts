@@ -1,6 +1,7 @@
 import * as changeCase from 'change-case'
 import ejs from 'ejs'
 import * as fs from 'fs'
+import * as Quote from 'inspirational-quotes'
 import _, {
   difference,
   intersection,
@@ -74,7 +75,6 @@ export class SequelizeModeler {
 
     if (!!tableTemplates) {
       tableDefByTableName.forEach(async (table, tableName) => {
-        console.log();
         await this.renderTemplates(tableTemplates, { table }, tableName)
       })
     }
@@ -97,18 +97,26 @@ export class SequelizeModeler {
       }
       const setOutputFileName = (overwriteFileName: string) => { localParams.outputFileName = overwriteFileName }
       const skipFile = () => { localParams.skipFile = true }
+      const { getQuote } = Quote
 
       const modelDefTemplate = await ejs.renderFile(path.resolve(this.cwd, template), {
         ...renderData,
         setOutputFileName,
         skipFile,
+        getQuote,
         changeCase,
         _
       })
 
       if (localParams.skipFile) return
 
-      return this.writeFile(path.join(this.cwd, localParams.outputFileName), modelDefTemplate)
+      const outputPath = path.join(this.cwd, localParams.outputFileName)
+      const outputDir = path.dirname(outputPath)
+
+      if (!fs.existsSync(outputDir)) {
+        await this.mkdir(outputDir)
+      }
+      return this.writeFile(outputPath, modelDefTemplate)
     }))
 
   }
@@ -130,6 +138,7 @@ export class SequelizeModeler {
   }
 
   protected writeFile = promisify(fs.writeFile)
+  protected mkdir = promisify(fs.mkdir)
 }
 
 interface ModelerConfig {

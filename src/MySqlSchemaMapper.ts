@@ -3,6 +3,7 @@ import {
   drop,
   forEach,
   forOwn,
+  includes,
   isNull,
   isString
 } from 'lodash'
@@ -12,7 +13,7 @@ import {
 } from 'sequelize/types'
 
 import {
-  Association,
+  AssociationType,
   EssentialColumnDescription,
   ParsedColumnDescriptionsByColumnName,
   ParsedColumnReference,
@@ -34,9 +35,8 @@ export class MySqlSchemaMapper extends SchemaMapper<
 
     const parsedColumnsDescriptionsByTableName: MySqlParsedColumnsDescriptionsByTableName = new Map()
 
-    await Promise.all(Array.from(this.tableSchemasByName.entries()).map((async ([tableName, schema]) => {
+    Array.from(this.tableSchemasByName.entries()).map((([tableName, schema]) => {
       const parsedDescriptionsByColumnName: MySqlParsedColumnDescriptionsByColumnName = new Map()
-
 
       forOwn(schema.columnsDescription, (description, columnName) => {
         const descriptionExtras = this.mapExtraColumnDescription(description)
@@ -58,15 +58,83 @@ export class MySqlSchemaMapper extends SchemaMapper<
       parsedColumnsDescriptionsByTableName.set(tableName, {
         name: tableName,
         columns: parsedDescriptionsByColumnName,
-        associations: await this.getAccociations()
+        isJunctionTable: this.isJunctionTable(parsedDescriptionsByColumnName, schema.foreignKeyReferences),
+        associations: []
       })
-    })))
+    }))
+
+    this.addAssociations(parsedColumnsDescriptionsByTableName)
 
     return parsedColumnsDescriptionsByTableName
   }
 
-  public async getAccociations(): Promise<Association[]> {
-    return []
+  protected addAssociations(
+    colsByTable: ParsedColumnsDescriptionsByTableName<MySqlColumnDescriptionExtra>
+  ) {
+    Array.from(this.tableSchemasByName.entries()).map((([sourceTableName, sourceSchema]) => {
+      sourceSchema.foreignKeyReferences.map((ref) => {
+        const source = colsByTable.get(sourceTableName)
+        const target = colsByTable.get(ref.referencedTableName)
+        if (!source || !target) return
+
+        source.associations.push({
+          associationType: AssociationType.belongsTo,
+          source: sourceTableName,
+          target: ref.referencedTableName,
+          foreignKey: ref.columnName,
+        })
+
+        if (source.isJunctionTable) {
+          const targetRef = sourceSchema.foreignKeyReferences.find(otherRef => otherRef.columnName !== ref.columnName)
+          if (!targetRef) return
+
+          const throughTarget = colsByTable.get(targetRef.referencedTableName)
+          if (!throughTarget) return
+
+          target.associations.push({
+            associationType: AssociationType.belongsToMany,
+            source: target.name,
+            target: throughTarget.name,
+            through: sourceTableName,
+            foreignKey: ref.columnName,
+            otherKey: targetRef.columnName,
+          })
+        } else {
+          const sourceDesc = source.columns.get(ref.columnName)
+          const isColUnique = (sourceDesc && sourceDesc.unique) === true
+
+          if (isColUnique) {
+            target.associations.push({
+              associationType: AssociationType.hasOne,
+              source: target.name,
+              target: sourceTableName,
+              foreignKey: ref.columnName,
+            })
+          } else {
+            target.associations.push({
+              associationType: AssociationType.hasMany,
+              source: target.name,
+              target: sourceTableName,
+              foreignKey: ref.columnName,
+            })
+          }
+        }
+      })
+    }))
+  }
+
+  protected isJunctionTable(
+    cols: ParsedColumnDescriptionsByColumnName<MySqlColumnDescriptionExtra>,
+    refs: MySqlForeignKeyReferences[]
+  ): boolean {
+    const primaryKeys = Array.from(cols.entries()).reduce((colNames, [colName, description]) => {
+      if (description.primaryKey) colNames.push(colName)
+      return colNames
+    }, [] as string[])
+
+    const primaryRefs = refs.map(ref => includes(primaryKeys, ref.columnName))
+
+    return primaryKeys.length  === 2 && primaryRefs.length === 2
   }
 
   protected getUniqueAttribute(columnName: string, indexes: MySqlIndexMetadata[]): string | true | undefined {
@@ -319,7 +387,7 @@ interface MySqlIndexMetadata {
     attribute: string
     length: number
     order: string
-  } []
+  }[]
   name: string
   tableName: string
   unique: boolean

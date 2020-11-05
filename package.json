@@ -13,13 +13,15 @@
   },
   "scripts": {
     "build": "tsc",
-    "modeler": "ts-node --project tsconfig.ts-node.json ./src/index.ts",
+    "modeler": "bin/sequelize-modeler",
+    "dev": "ts-node --project tsconfig.ts-node.json ./src/index.ts",
     "lint-templates": "ejslint ./templates/*"
   },
   "dependencies": {
     "change-case": "^4.1.1",
     "ejs": "^3.1.5",
     "handlebars": "^4.7.6",
+    "inspirational-quotes": "^1.0.8",
     "mysql2": "^2.2.5",
     "sequelize": "^6.3.5"
   },

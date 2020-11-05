@@ -1,11 +1,12 @@
 {
   "include": [
-    "src/**/*"
+    "src/**/*",
   ],
   "compilerOptions": {
     "target": "ES6",
     "module": "CommonJS",
     "outDir": "lib",
+    "typeRoots": ["./node_modules/@types/", "./src/@types"],
     "strict": true,
     "noUnusedParameters": true,
     "lib": [
@@ -29,7 +30,7 @@
     "isolatedModules": true,
     "noEmit": false,
     "preserveConstEnums": true,
-    "removeComments": false,
+    "removeComments": true,
     "sourceMap": true,
   }
 }

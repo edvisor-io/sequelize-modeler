@@ -1,0 +1,5 @@
+<%#
+This file is not required, if `tsType` returns the right types for you.
+The below example shows how you would change the type from `number` to `boolean` if the database column type is `INT(1)`
+%> 
+<%- (column.tsType === 'number' && column.length === 1) ? 'boolean' : column.tsType %>

@@ -143,15 +143,26 @@ Inside a template, you have access to a few useful functions and objects
 
   If you find that some criteria matches the table or column names, for example, you can dynamically skip rendering the template
 
-- `changeCase` this [awesome package]() to change casing of strings
+- `changeCase` this [awesome package](https://github.com/blakeembrey/change-case/tree/master/packages/camel-case#readme) to change casing of strings
 
 - `_` Lodash version 4
 
+- `getQuote() => string` returns a random quote using [inspirational-quotes package](https://vinitshahdeo.github.io/inspirational-quotes/)
+
 ### Data
-The data you recieve inside a template is either column data per table, or data of all columns by table.
+The data you recieve inside a template is this:
 ```ts
-// a template per table gets this data
-const columns: Map<string, { // mapped by column name
+
+// The key of this Map is the table name
+const table :Map<string, {
+  name: string                // table name
+  columns,                    // a Map columns by column names
+  isJunctionTable: boolean    // if the table is determined to be a many-to-many junction table
+  associations: Association[] // associations to other models
+}>
+
+// The key of this Map is the column name
+const columns: Map<string, {
   type: string
   allowNull: boolean
   defaultValue: string
@@ -164,7 +175,7 @@ const columns: Map<string, { // mapped by column name
   precision?: number
   scale?: number
   enumEntries?: string[]
-  unique?: boolean
+  unique?: boolean | string
   reference?: {
     tableName: string
     key: string
@@ -172,28 +183,27 @@ const columns: Map<string, { // mapped by column name
   unsigned?: boolean
 }>
 
-// a template for all tables gets this data
-const table :Map<string, { // mapped by table name
-  name: string
-  columns,
-}>
-
-//TODO
-const associations: {
+const associations: Association: {
   associationType: 'belongsTo' | 'hasMany' | 'belongsToMany' | 'hasOne'
   source: string
   target: string
-  as: string
   foreignKey: string
   through?: string
   otherKey?: string
   onDelete?: string
   onUpdate?: string
-}[]
+}
+
+type MySqlColumnType =
+  'bigint' | 'binary' | 'bit' | 'blob' | 'bool' | 'char' | 'date' | 'datetime' | 'decimal' | 'double' | 'enum' |
+  'float' | 'geometry' | 'int' | 'json' | 'jsonb' | 'longblob' | 'longtext' | 'mediumblob' | 'mediumint' |
+  'mediumtext' | 'ntext' | 'numeric' | 'real' | 'set' | 'smallint' | 'text' | 'time' | 'timestamp' | 'tinyblob' |
+  'tinyint' | 'tinytext' | 'uniqueidentifier' | 'uuid' | 'varbinary' | 'varchar' | 'year'
 
 ```
 
 
 ## Todos
- - associations belongsTo, belongsToMany, hasOne
- - tests
+ - associations onDeleted/onUpdated
+ - parameterize CLI
+ - add tests

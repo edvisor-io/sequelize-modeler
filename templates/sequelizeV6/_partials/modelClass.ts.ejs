@@ -1,18 +1,12 @@
 <%_
 const instanceName = changeCase.camelCase(table.name)
-const attributesToSetUndefined = {}
-table.columns.forEach((column, columnName) => {
-  if (column.primaryKey || _.includes(['created', 'modified'], columnName)) {
-    attributesToSetUndefined[columnName] = undefined
-  }
-})
 -%>
 class <%= modelName %> extends Model<
   <%= attributesInterfaceName %>,
   <%= createAttributeInterfaceName %>
 > implements <%= attributesInterfaceName %> {
 <%_ table.columns.forEach((column, columnName) => { -%>
-  public <%= changeCase.camelCase(columnName) %>!: <%= column.tsType %>
+  public <%= changeCase.camelCase(columnName) %>!: <%- include('tsType.ejs', { column }) %>
 <%_ }) -%>
 
 }

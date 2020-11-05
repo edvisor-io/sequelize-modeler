@@ -1,13 +1,11 @@
-<%
-const fileName = changeCase.paramCase(table.name)
-setOutputFileName(`models/${fileName}.ts`)
+<%_
+const modelName = include('_partials/modelNames.ejs', {
+  modelName: changeCase.pascalCase(table.name),
+})
 
-const modelName = changeCase.pascalCase(table.name)
-const attributesInterfaceName = `${modelName}Attributes`
-const createAttributeInterfaceName = `${modelName}CreateAttributes`
-const hasCreated = table.columns.has('created')
-const hasModified = table.columns.has('modified')
-%>
+const fileName = changeCase.paramCase(modelName)
+setOutputFileName(`server/sequelize/models/${fileName}.ts`)
+-%>
 import { ModelCtor } from 'sequelize'
 
 import { <%= modelName %>Schema } from '../schema/<%= fileName %>'

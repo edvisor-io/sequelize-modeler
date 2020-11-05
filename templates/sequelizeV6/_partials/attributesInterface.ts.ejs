@@ -1,10 +1,11 @@
-interface <%= attributesInterfaceName %><%
-  if (hasCreated || hasModified) { %> extends <%
-    if (hasCreated) { %>CreateableModel<% }
-    if (hasCreated && hasModified) { %>, <% }
-    if (hasModified) { %>ModifiableModel<% }
-  } %> {
+<%_
+const parentInterfaces = []
+if (hasCreated) parentInterfaces.push('CreateAttribute')
+if (hasModified) parentInterfaces.push('ModifyAttribute')
+const extendClause = (!_.isEmpty(parentInterfaces)) ? ` extends ${parentInterfaces.join(', ')}` : ''
+-%>
+interface <%= attributesInterfaceName %><%= extendClause %> {
 <%_ table.columns.forEach((column, columnName) => { -%>
-  <%= changeCase.camelCase(columnName) %>: <%= column.tsType %>
+  <%= changeCase.camelCase(columnName) %>: <%- include('tsType.ejs', { column }) %>
 <%_ }) -%>
 }

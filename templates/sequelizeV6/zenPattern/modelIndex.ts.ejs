@@ -5,13 +5,17 @@ import {
 } from 'sequelize'
 
 import { eachFileInDir } from '../../utils'
+import { AppSchema } from '../schema'
 <%_
-setOutputFileName('models/index.ts')
-tables.forEach((table) => { -%>
-import { <%= changeCase.pascalCase(table.name) %>Ctor } from './models/<%= changeCase.paramCase(table.name) %>'
+setOutputFileName('server/sequelize/models/index.ts')
+tables.forEach((table) => {
+  const modelName = include('_partials/modelNames.ejs', {
+    modelName: changeCase.pascalCase(table.name),
+  }) -%>
+import { <%= modelName %>Ctor } from './<%= changeCase.paramCase(modelName) %>'
 <%_ }) -%>
 
-export default function initAllModels(sequelize: Sequelize) {
+export function initAllModels(sequelize: Sequelize) {
   eachFileInDir(__dirname, file => {
     const modelFilePath = path.join(__dirname, file)
     const model = require(modelFilePath).default as typeof Model
@@ -21,8 +25,21 @@ export default function initAllModels(sequelize: Sequelize) {
   })
 }
 
+export function initAllAssociations(models: SequelizeModels) {
+  eachFileInDir(__dirname, file => {
+    const modelFilePath = path.join(__dirname, file)
+    const { associate }: AppSchema<typeof Model> = require(modelFilePath).schema
+
+    associate(models)
+  })
+}
+
+
 export type SequelizeModels = {
-<%_ tables.forEach(table => { -%>
-  <%= changeCase.pascalCase(table.name) %>: <%= changeCase.pascalCase(table.name) %>Ctor
+<%_ tables.forEach(table => {
+  const modelName = include('_partials/modelNames.ejs', {
+    modelName: changeCase.pascalCase(table.name),
+  }) -%>
+  <%= modelName %>: <%= modelName %>Ctor
 <%_ }) -%>
 }

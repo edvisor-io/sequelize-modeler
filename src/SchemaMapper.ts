@@ -1,4 +1,5 @@
 import {
+  camelCase,
   includes,
   isEmpty
 } from 'lodash'
@@ -25,7 +26,6 @@ export abstract class SchemaMapper<
   public abstract async mapSchema(tableNames: string[]): Promise<
     ParsedColumnsDescriptionsByTableName<ColumnDescriptionExtra>>
 
-  public abstract async getAccociations(): Promise<Association[]>
 
   protected async getTableSchemas(tableNames: string[]): Promise<void> {
     const queryInterface = this.sequelize.getQueryInterface()
@@ -47,6 +47,9 @@ export abstract class SchemaMapper<
     return includes(['\'\'', '""'], input.slice(0, 1) + input.slice(-1)) ? input.slice(1, -1) : input
   }
 
+  protected plural(input: string) {
+    return `${camelCase(input)}s`
+  }
 }
 
 /**
@@ -81,6 +84,7 @@ export interface TableMetadata<
 export type ParsedColumnsDescriptionsByTableName<ColumnDescriptionExtra = {}> = Map<string, {
   name: string
   columns: ParsedColumnDescriptionsByColumnName<ColumnDescriptionExtra>
+  isJunctionTable: boolean
   associations: Association[]
 }>
 
@@ -90,12 +94,19 @@ export type ParsedColumnsDescriptionsByTableName<ColumnDescriptionExtra = {}> = 
 export type ParsedColumnDescriptionsByColumnName<ColumnDescriptionExtra = {}> =
   Map<string, ParsedColumnDescription<ColumnDescriptionExtra>>
 
+export enum AssociationType {
+  belongsTo = 'belongsTo',
+  belongsToMany = 'belongsToMany',
+  hasOne = 'hasOne',
+  hasMany = 'hasMany',
+}
+
 export type Association = {
-  associationType: 'belongsTo' | 'hasMany'
+  associationType: AssociationType
   source: string
   target: string
-  as: string
   foreignKey: string
+  targetKey?: string
   through?: string
   otherKey?: string
   onDelete?: string
