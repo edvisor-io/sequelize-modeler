@@ -7,10 +7,9 @@
   "bin": {
     "sequelize-modeler": "bin/sequelize-modeler"
   },
-  "author": {
-    "name": "Kenta Fried",
-    "email": "kenta.fried@gmail.com"
-  },
+  "contributors": [
+    "Kenta Fried <kenta.fried@gmail.com>"
+  ],
   "scripts": {
     "build": "tsc",
     "modeler": "bin/sequelize-modeler",
@@ -23,7 +22,8 @@
     "handlebars": "^4.7.6",
     "inspirational-quotes": "^1.0.8",
     "mysql2": "^2.2.5",
-    "sequelize": "^6.3.5"
+    "sequelize": "^6.3.5",
+    "yargs": "^16.1.0"
   },
   "devDependencies": {
     "@types/ejs": "^3.0.4",

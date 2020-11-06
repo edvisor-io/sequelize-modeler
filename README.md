@@ -14,8 +14,11 @@ Generates Sequelize models and other boilerplate code by reading your database s
 3. API
     1. Tooling
     2. Data
+    3. How are associations detected?
 
 4. Todos
+
+
 
 ## Getting started
 ```sh
@@ -23,6 +26,8 @@ npm install sequelize-modeler --save-dev
 // or
 yarn add sequelize-modeler --dev
 ```
+
+
 
 ### Config
 Modeler uses Sequelize to read and analyze your database schema. All you need are the [connection settings](https://sequelize.org/master/manual/getting-started.html#connecting-to-a-database) and a template you want to render. Modeler comes with some common templates that you can use directly. If they don't quiet fit you bill, simply use them as a starting point to create you own ones.
@@ -38,7 +43,7 @@ Modeler uses Sequelize to read and analyze your database schema. All you need ar
   },
   "tables": {
     "include": ["bar"], -- tables you want to feed to your templates. ATTN: [] === no op
-    "exclude": [], -- the "I want all by X and Y" scenario
+    "exclude": [], -- the "I want all but X and Y" scenario
     "templates": [ -- these templates get rendered for each table. See below what data they get.
       "templates/sequelize_V6/model.ts.ejs", -- the output filename can be composed within the template.
       "templates/sequelize_V6/association.ts.ejs"
@@ -50,6 +55,8 @@ Modeler uses Sequelize to read and analyze your database schema. All you need ar
 }
 ```
 
+
+
 ### Run it
 ```sh
 npm run modeler
@@ -57,6 +64,9 @@ npm run modeler
 yarn modeler
 ```
 Modeler will create the files right where you run the command and it will give it default names such as `foo-0.js` and `foo-1.js`. To control the output directory and file name, see the `setOutputFileName` function that you can call inside a template.
+
+
+
 ### The output
 ```ts
 //templates/sequelize_V6/model.ts.ejs -> gen/bar.ts
@@ -116,6 +126,9 @@ export function init(sequelize: Sequelize) {
   })
 }
 ```
+
+
+
 ## Support list (available templates)
 |             |MySql|MsSql|Postgres|SQLite|MariaDb|
 |:------------|:---:|:---:|:---:|:---:|----:|
@@ -125,29 +138,52 @@ export function init(sequelize: Sequelize) {
 
 If your database is not supported, extend the abstract `SchemaMapper` class. If your ORM is not supported, write a template for it. Either way, you will support developers by reducing mindless work, preventing bugs, and just being more happy! So please, submit a pull request ;)
 
+
+
+
 ## API
+
+
 
 ### Tooling
 Inside a template, you have access to a few useful functions and objects
 
-- `setOutputFileName(fileName: string) => void`
+- ```ts
+  setOutputFileName(fileName: string) => void
+  ```
 
-  Changes the output filename from the default.
+  Changes the output filename from the default of `[tableName]-[index].ts`.
 
   Example:
   ```ts
   setOutputFileName(`${table.name}-${new Date()}.js`)
   ```
 
-- `skipFile() => void` 
+- ```ts
+  skipFile() => void
+  ``` 
 
   If you find that some criteria matches the table or column names, for example, you can dynamically skip rendering the template
 
-- `changeCase` this [awesome package](https://github.com/blakeembrey/change-case/tree/master/packages/camel-case#readme) to change casing of strings
+- ```ts
+  changeCase: object
+  ```
+  
+  this [awesome package](https://github.com/blakeembrey/change-case/tree/master/packages/camel-case#readme) to change casing of strings
 
-- `_` Lodash version 4
+- ```ts
+  _: object
+  ```
+  
+  Lodash version 4
 
-- `getQuote() => string` returns a random quote using [inspirational-quotes package](https://vinitshahdeo.github.io/inspirational-quotes/)
+- ```ts
+  getQuote() => string
+  ```
+  
+  returns a random quote using the [inspirational-quotes package](https://vinitshahdeo.github.io/inspirational-quotes/)
+
+
 
 ### Data
 The data you recieve inside a template is this:
@@ -201,6 +237,29 @@ type MySqlColumnType =
   'tinyint' | 'tinytext' | 'uniqueidentifier' | 'uuid' | 'varbinary' | 'varchar' | 'year'
 
 ```
+
+
+
+### How are associations detected?
+Associations are the Sequelize equivalent of MySql foreign key relationships. You can find more details about them [here](https://sequelize.org/master/manual/assocs.html).
+Modeler tries to guess the relation of 2 models by examining the foreign key relationships. In the below list, the source model is the one you put the assiociation on and the target model is the one you assiciate it with. These are the 4 types (from the perspective of a source model):
+
+ - **belongsTo**: The foreign key is on the source model.
+
+   Target model association: *hasMany* or *hasOne*
+
+ - **belongsToMany**: There are 2 foreign keys on a [junction table](https://en.wikipedia.org/wiki/Associative_entity) and those keys are also constrained by a composite unique index (a primary index is always also a unique index). The junction table gets a *belongsTo* association to both, the source and the target model.
+
+   Target model association: *belongsToMany*
+
+ - **hasOne**: The foreign key is on the target model and there is a unique (non-composite) index on the foreign key.
+
+   Target model association: *belongsTo*
+
+ - **hasMany**: The foreign key is on the target model and there is no unique index on the foreign key.
+
+   Target model association: *belongsTo*
+
 
 
 ## Todos

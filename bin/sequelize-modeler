@@ -1,6 +1,30 @@
 #!/usr/bin/env node
 const Modeler = require('../')
+const argv = require('yargs')
+  .usage(
+    'Usage: sequelize-modeler [options]'
+  )
+  .alias('c', 'config').string('c')
+  .describe('c', 'config file name')
+  .alias('u', 'username').string('u')
+  .describe('u', 'database user')
+  .alias('p', 'password').string('p')
+  .describe('p', 'database password')
+  .alias('d', 'dialect').string('d')
+  .describe('d', 'database dialect: mysql, mssql, postgres, mariadb')
+  .alias('h', 'host').string('h')
+  .describe('h', 'database host name')
+  .alias('e', 'exclude').array('e')
+  .describe('e', 'table names to exclude')
+  .alias('i', 'include').array('i')
+  .describe('i', 'table names to include')
+  .alias('t', 'table-template').array('t')
+  .describe('t', 'templates rendered for each table')
+  .alias('T', 'index-template').array('T')
+  .describe('T', 'templates rendered once')
+  .help()
+  .argv
 
-const modeler = new Modeler()
+const modeler = new Modeler(argv.c)
 
 modeler.run()
