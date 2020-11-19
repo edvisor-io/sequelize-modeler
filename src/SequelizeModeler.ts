@@ -1,7 +1,6 @@
 import * as changeCase from 'change-case'
 import ejs from 'ejs'
 import * as fs from 'fs'
-import * as Quote from 'inspirational-quotes'
 import _, {
   difference,
   intersection,
@@ -97,12 +96,10 @@ export class SequelizeModeler {
       }
       const setOutputFileName = (overwriteFileName: string) => { localParams.outputFileName = overwriteFileName }
       const skipFile = () => { localParams.skipFile = true }
-      const { getQuote } = Quote
       let data = {
         ...renderData,
         setOutputFileName,
         skipFile,
-        getQuote,
         changeCase,
         _
       }
@@ -116,7 +113,7 @@ export class SequelizeModeler {
             console.warn('No preprocessor found. Needs to be a default exported function. Skipping preprocessing. ' + templateNameOrConfig.preprocessor)
           } else {
             data = {
-              ...preprocessor(data)
+              ...await preprocessor(data)
             }
           }
         }

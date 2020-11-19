@@ -14,7 +14,8 @@ Generates Sequelize models and other boilerplate code by reading your database s
 3. API
     1. Tooling
     2. Data
-    3. How are associations detected?
+    3. (Optional) Preprocessor
+    4. How are associations detected?
 
 4. Todos
 
@@ -177,12 +178,6 @@ Inside a template, you have access to a few useful functions and objects
   
   Lodash version 4
 
-- ```ts
-  getQuote() => string
-  ```
-  
-  returns a random quote using the [inspirational-quotes package](https://vinitshahdeo.github.io/inspirational-quotes/)
-
 
 
 ### Data
@@ -190,7 +185,7 @@ The data you recieve inside a template is this:
 ```ts
 
 // The key of this Map is the table name
-const table :Map<string, {
+const table: Map<string, {
   name: string                // table name
   columns,                    // a Map columns by column names
   isJunctionTable: boolean    // if the table is determined to be a many-to-many junction table
@@ -238,7 +233,46 @@ type MySqlColumnType =
 
 ```
 
+### (Optional) Preprocessor
+A preprocessor can be used to prepare the data before it gets rendered by the template. This is useful if:
+- a dependency is required to render the template
+- some async action is required to render the template
+- a lot of data preparation code convolutes the template making it hard to read
 
+Each template can have it's own preprocessor by adding the `preprocessor` option to the template configuration:
+```ts
+// modeler.config.json
+{
+  "tables": {
+    "templates": [
+      "local/path/simpleTemplate.ejs",
+      {
+        "template": "local/path/complexTemplate.ejs",
+        "preprocessor": "local/path/complexTemplatePreprocessor.js"
+      }
+    ]
+  }
+}
+```
+
+The preprocessor is a simple JavaScript function that accepts a single `data` object and returns whatever data is needed to render the template. Note that any dependency needs to be loaded from your projects `node_modules` folder, not from Modeler's dependencies where the preprocessor module is actually loaded. Here an example assuming that you have installed the `inflection` dependency in your project: 
+```ts
+const path = require('path') // any node dependency can be loaded from Modeler
+
+const requireLocal = (dep) => require(path.resolve(process.cwd(), 'node_modules', dep))
+
+const inflection = requireLocal('inflection') // dependencies of your project need to be resolved like so
+
+module.exports = async function(data /* the data object created by Modeler */) {
+  const { table, changeCase } = data
+
+  return {
+    // in most cases you probably want to add some properties to the data object, rather than replacing it
+    modelNamePlural: inflection.pluralize(changeCase.pascalCase(table.name)),
+    ...data
+  }
+}
+```
 
 ### How are associations detected?
 Associations are the Sequelize equivalent of MySql foreign key relationships. You can find more details about them [here](https://sequelize.org/master/manual/assocs.html).
