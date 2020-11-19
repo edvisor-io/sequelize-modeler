@@ -47,7 +47,7 @@ export class SequelizeModeler {
 
     if (isNil(config) || isString(config)) {
       const configFileName = isString(config) ? config : './modeler-config.json'
-      const configFile: ModelerConfig | undefined = require(path.join(this.cwd, configFileName))
+      const configFile: ModelerConfig | undefined = require(path.resolve(this.cwd, configFileName))
       if (!configFile) throw new Error(`${configFileName} not found`)
 
       this.sequelize = new Sequelize(configFile.sequelize)
@@ -72,66 +72,92 @@ export class SequelizeModeler {
     const mapper = new Mapper(this.sequelize)
     const tableDefByTableName = await mapper.mapSchema(await this.filterTables())
 
-    if (!!templateNamesOrConfigs && templateNamesOrConfigs.length > 0) {
-      tableDefByTableName.forEach(async (table, tableName) => {
-        await this.processTemplates(templateNamesOrConfigs, { table }, tableName)
-      })
-    }
+    const getTemplateName = (templateNameOrConfig: (string | TemplateConfig)) => (
+      typeof templateNameOrConfig === 'string' ?
+        templateNameOrConfig :
+        templateNameOrConfig.template
+    )
 
-    if (!!rootTemplates) {
-      await this.processTemplates(rootTemplates, { tables: tableDefByTableName }, 'index')
-    }
+    return Promise.all([
+      Promise.resolve().then(() => {
+        if (!templateNamesOrConfigs) return
+
+        return Promise.all(templateNamesOrConfigs.map(async (templateNameOrConfig, templateIndex) => {
+          const preprocessor = this.getPreprocessor(templateNameOrConfig)
+
+          tableDefByTableName.forEach(async (table, tableName) => {
+            const defaultFileName = `${tableName}-${templateIndex}.ts`
+
+            await this.processTemplates(
+              getTemplateName(templateNameOrConfig), { table }, preprocessor, defaultFileName)
+          })
+        }))
+      }),
+      Promise.resolve().then(() => {
+        if (!rootTemplates) return
+
+        return Promise.all(rootTemplates.map(async (templateNameOrConfig) => {
+          const preprocessor = this.getPreprocessor(templateNameOrConfig)
+
+          await this.processTemplates(
+            getTemplateName(templateNameOrConfig), { tables: tableDefByTableName }, preprocessor)
+        }))
+      })
+    ])
   }
 
   protected async processTemplates(
-    templateNamesOrConfigs: (string | TemplateConfig)[],
+    templateFileName: string,
     renderData: object,
-    defaultFileName: string,
-    defaultFileEnding: 'js' | 'ts' = 'ts'
+    preprocessor?: (data: object) => Promise<object>,
+    defaultOutputFileName: string = templateFileName,
   ) {
-    return Promise.all(templateNamesOrConfigs.map(async (templateNameOrConfig, templateIndex) => {
-      const localParams = {
-        outputFileName: `${defaultFileName}-${templateIndex}${defaultFileEnding}`,
-        skipFile: false
-      }
-      const setOutputFileName = (overwriteFileName: string) => { localParams.outputFileName = overwriteFileName }
-      const skipFile = () => { localParams.skipFile = true }
-      let data = {
-        ...renderData,
-        setOutputFileName,
-        skipFile,
-        changeCase,
-        _
-      }
+    const localParams = {
+      outputFileName: defaultOutputFileName,
+      skipFile: false
+    }
+    const setOutputFileName = (overwriteFileName: string) => { localParams.outputFileName = overwriteFileName }
+    const skipFile = () => { localParams.skipFile = true }
+    const data = {
+      ...renderData,
+      setOutputFileName,
+      skipFile,
+      changeCase,
+      _
+    }
 
-      const templateFileName = (typeof templateNameOrConfig === 'string') ? templateNameOrConfig : templateNameOrConfig.template
-      if (typeof templateNameOrConfig === 'object') {
-        if (templateNameOrConfig.preprocessor) {
-          const preprocessor: ((data: object) => object) | unknown = require(
-            path.resolve(this.cwd, templateNameOrConfig.preprocessor))
-          if (typeof preprocessor !== 'function') {
-            console.warn('No preprocessor found. Needs to be a default exported function. Skipping preprocessing. ' + templateNameOrConfig.preprocessor)
-          } else {
-            data = {
-              ...await preprocessor(data)
-            }
-          }
-        }
-      }
+    const modelDefTemplate = await ejs.renderFile(
+      path.resolve(this.cwd, templateFileName),
+      (!preprocessor) ? data : await preprocessor(data)
+    )
 
-      const modelDefTemplate = await ejs.renderFile(path.resolve(this.cwd, templateFileName), data)
+    if (localParams.skipFile) return
 
-      if (localParams.skipFile) return
+    const outputPath = path.resolve(this.cwd, localParams.outputFileName)
 
-      const outputPath = path.join(this.cwd, localParams.outputFileName)
-      const outputDir = path.dirname(outputPath)
+    const outputDir = path.dirname(outputPath)
+    if (!fs.existsSync(outputDir)) {
+      await this.mkdir(outputDir, { recursive: true })
+    }
 
-      if (!fs.existsSync(outputDir)) {
-        await this.mkdir(outputDir, { recursive: true })
-      }
-      return this.writeFile(outputPath, modelDefTemplate)
-    }))
+    return this.writeFile(outputPath, modelDefTemplate)
+  }
 
+  protected getPreprocessor(templateNameOrConfig: (string | TemplateConfig)) {
+    if (typeof templateNameOrConfig === 'string') return
+    if (!templateNameOrConfig.preprocessor) return
+
+    const preprocessorPath = path.resolve(this.cwd, templateNameOrConfig.preprocessor)
+    const preprocessor: (data: object) => Promise<object> = require(preprocessorPath)
+
+    if (typeof preprocessor !== 'function') {
+      console.warn('No preprocessor found. Needs to be `module.export = function() {}`. Skipping preprocessing. '
+        + preprocessorPath)
+
+      return
+    }
+
+    return preprocessor
   }
 
   protected async filterTables(): Promise<string[]> {
@@ -161,7 +187,7 @@ interface ModelerConfig {
     exclude?: string[]
     templates?: (string | TemplateConfig)[]
   }
-  templates?: string[]
+  templates?: (string | TemplateConfig)[]
 }
 
 interface TemplateConfig {
