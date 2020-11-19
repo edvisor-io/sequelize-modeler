@@ -4,24 +4,106 @@ const modelName = include('_partials/modelNames.ejs', {
 })
 const attributesInterfaceName = `${modelName}Attributes`
 const createAttributeInterfaceName = `${modelName}CreateAttributes`
+const associationsInterfaceName = `${modelName}Relations`
+const modelInterfaceName = `${modelName}Model`
 const hasCreated = table.columns.has('created')
 const hasModified = table.columns.has('modified')
 const quote = getQuote()
+const optionalAttributes = Array.from(table.columns.entries()).filter(([columnName, column]) => column.primaryKey ||
+  column.allowNull ||
+  _.includes(['created', 'modified'], columnName)
+).map(([ columnName ]) => columnName)
+
+const findAlias = ({ source, target, foreignKey, associationType }, targetModel) => {
+  const refName = (foreignKey.slice(-3).toLowerCase() === '_id') ? foreignKey.slice(0, -3) : foreignKey
+  let baseName = targetModel
+  if (associationType === 'belongsTo' && refName !== target) {
+    baseName = refName
+  } else if (associationType === 'hasMany' && refName !== source) {
+    baseName = refName + targetModel
+  }
+
+  return changeCase.camelCase(baseName)
+}
+
+const pluralize = (text) => {
+  if (text.endsWith('s')) return text + 'es'
+  if (text.endsWith('y')) return text.slice(0, -1) + 'ies'
+  return text + 's'
+}
+
+const associations = _(table.associations)
+  .map((association) => {
+    const targetModel = include('_partials/modelNames.ejs', { modelName: changeCase.pascalCase(association.target) })
+    const isMany = association.associationType.endsWith('Many')
+    const aliasSingular = findAlias(association, targetModel)
+    const alias = isMany ? pluralize(aliasSingular) : aliasSingular 
+
+    return {
+      alias,
+      aliasSingular,
+      isMany,
+      tsType: targetModel,
+      tsType: targetModel,
+      associationType: association.associationType
+    }
+  })
+  .sortBy('name')
+  .value()
+
+const associationsImports = _(table.associations)
+  .map((association) => {
+    return include('_partials/modelNames.ejs', { modelName: changeCase.pascalCase(association.target) })
+  })
+  .pull(modelName)
+  .sortBy()
+  .sortedUniq() // the same association target could be required by multiple associations, e.g. `ownerId` and `userId`
+  .value()
+
+const sequelizeDependencies = _(['DataTypes', 'Model', !_.isEmpty(optionalAttributes) ? 'Optional' : undefined,
+  ...table.associations.reduce((associationDeps, { associationType }) => {
+    switch (associationType) {
+      case 'hasOne': {
+        associationDeps.push('HasOneGetAssociationMixin', 'HasOneSetAssociationMixin', 'HasOneCreateAssociationMixin')
+        break
+      }
+      case 'hasMany': {
+        associationDeps.push('HasManyGetAssociationsMixin', 'HasManyAddAssociationMixin', 'HasManyHasAssociationMixin',
+          'HasManyCountAssociationsMixin', 'HasManyCreateAssociationMixin')
+        break
+      }
+      case 'belongsTo': {
+        associationDeps.push('BelongsToGetAssociationMixin', 'BelongsToSetAssociationMixin',
+          'BelongsToCreateAssociationMixin')
+        break
+      }
+      case 'belongsToMany': {
+        associationDeps.push('BelongsToManyGetAssociationsMixin', 'BelongsToManyAddAssociationsMixin',
+          'BelongsToManyHasAssociationsMixin', 'BelongsToManyCountAssociationsMixin',
+          'BelongsToManyCreateAssociationMixin')
+        break
+      }
+    }
+    return associationDeps
+  }, [])
+])
+  .sortBy()
+  .sortedUniq()
+  .value()
+
 
 const fileName = changeCase.paramCase(modelName)
 setOutputFileName(`server/sequelize/schema/${fileName}.ts`)
--%>
 -%>
 // <%= quote.text %> - <%= quote.author %>
 // Generated: <%= new Date().toLocaleDateString()  %>
 
 import {
-  DataTypes,
-  Model,
-  Optional
+<%_ sequelizeDependencies.forEach((deps) => { -%>
+  <%= deps %>,
+<%_ }) -%>
 } from 'sequelize'
 
-import <%= modelName %> from '../models/<%= fileName %>'
 import {
   AppSchema,
   <%_ if (hasCreated) { -%>
@@ -29,14 +111,21 @@ import {
   <%_ } if (hasModified) { -%>
   ModifyAttribute,
   <%_ } -%>
-} from './'
+} from '.'
 
+import {
+  <%= modelName %>,
+  <%_ associationsImports.forEach((deps) => { -%>
+  <%= deps %>,
+  <%_ }) -%>
+} from '../models'
 
 export <%- include('_partials/modelClass.ts.ejs', {
   table,
   modelName: `${modelName}Schema`,
-  attributesInterfaceName,
-  createAttributeInterfaceName
+  modelInterfaceName,
+  createAttributeInterfaceName,
+  associations
 }) %>
 
 export <%- include('_partials/attributesInterface.ts.ejs', {
@@ -49,8 +138,17 @@ export <%- include('_partials/attributesInterface.ts.ejs', {
 export <%- include('_partials/createAttributesInterface.ts.ejs', {
   table,
   attributesInterfaceName,
-  createAttributeInterfaceName
+  createAttributeInterfaceName,
+  optionalAttributes
 }) %>
+
+export <%- include('_partials/modelAssociationInterface.ts.ejs', {
+  table,
+  associationsInterfaceName,
+  associations
+}) %>
+
+export type <%= modelInterfaceName %> = <%= attributesInterfaceName %> & Partial<<%= associationsInterfaceName %>>
 
 export const schema: AppSchema<typeof <%= modelName %>> = {
   init: (sequelize, model) => {
@@ -91,7 +189,8 @@ export const schema: AppSchema<typeof <%= modelName %>> = {
   table.associations.forEach((association) => {
     const targetModel = include('_partials/modelNames.ejs', { modelName: changeCase.pascalCase(association.target) })
     const throughModel = association.through && include('_partials/modelNames.ejs', { modelName: changeCase.pascalCase(association.through) })
-    const asAlias = changeCase.camelCase(targetModel) + (association.associationType.endsWith('Many') ? 's' : '')
+    const isMany = association.associationType.endsWith('Many')
+    const asAlias = isMany ? pluralize(findAlias(association, targetModel)) : findAlias(association, targetModel) 
   -%>
     models.<%= modelName %>.<%= association.associationType %>(models.<%= targetModel %>, {
       foreignKey: '<%= changeCase.camelCase(association.foreignKey) %>',

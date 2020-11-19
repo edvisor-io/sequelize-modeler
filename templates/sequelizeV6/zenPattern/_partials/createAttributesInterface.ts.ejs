@@ -1,0 +1,11 @@
+<%_
+if (_.isEmpty(optionalAttributes)) { -%>
+type <%= createAttributeInterfaceName %> = <%= attributesInterfaceName %>
+<%_ } else { -%>
+interface <%= createAttributeInterfaceName %> extends Optional<<%= attributesInterfaceName %>,
+  <%_ optionalAttributes.forEach((columnName, columnIndex) => { -%>
+  '<%= changeCase.camelCase(columnName) %>'<%_ if (columnIndex < optionalAttributes.length - 1) { -%> |
+  <%_ }
+  }) -%>
+> {}
+<%_ } -%>

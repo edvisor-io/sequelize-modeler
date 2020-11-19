@@ -1,6 +1,10 @@
 <%_
 setOutputFileName('server/sequelize/schema/index.ts')
+const quote = getQuote()
 -%>
+// <%= quote.text %> - <%= quote.author %>
+// Generated: <%= new Date().toLocaleDateString()  %>
+
 import { Sequelize } from 'sequelize'
 
 import { SequelizeModels } from '../models'
@@ -15,5 +19,17 @@ export interface CreateAttribute {
 }
 
 export interface ModifyAttribute {
-  modified: Date
+  modified: Date | null
 }
+
+<%_
+tables.forEach((table) => {
+  const modelName = include('_partials/modelNames.ejs', { modelName: changeCase.pascalCase(table.name) })
+-%>
+export type {
+  <%= modelName %>Attributes,
+  <%= modelName %>CreateAttributes,
+  <%= modelName %>Relations,
+  <%= modelName %>Model,
+} from './<%= changeCase.paramCase(modelName) %>'
+<%_ }) -%>

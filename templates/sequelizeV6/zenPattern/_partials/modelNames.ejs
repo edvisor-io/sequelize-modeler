@@ -1,0 +1,9 @@
+<%_
+const exceptions = {
+  'Agency': 'Office',
+  'AgencyCompany': 'Agency',
+  'School': 'Campus',
+  'SchoolCompany': 'School',
+}
+-%>
+<%- exceptions[modelName] || modelName %>

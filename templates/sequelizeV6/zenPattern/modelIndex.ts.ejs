@@ -1,3 +1,10 @@
+<%_
+setOutputFileName('server/sequelize/models/index.ts')
+const quote = getQuote()
+-%>
+// <%= quote.text %> - <%= quote.author %>
+// Generated: <%= new Date().toLocaleDateString()  %>
+
 import * as path from 'path'
 import {
   Model,
@@ -7,19 +14,18 @@ import {
 import { eachFileInDir } from '../../utils'
 import { AppSchema } from '../schema'
 <%_
-setOutputFileName('server/sequelize/models/index.ts')
 tables.forEach((table) => {
-  const modelName = include('_partials/modelNames.ejs', {
-    modelName: changeCase.pascalCase(table.name),
-  }) -%>
+  const modelName = include('_partials/modelNames.ejs', { modelName: changeCase.pascalCase(table.name) }) -%>
 import { <%= modelName %>Ctor } from './<%= changeCase.paramCase(modelName) %>'
 <%_ }) -%>
 
 export function initAllModels(sequelize: Sequelize) {
   eachFileInDir(__dirname, file => {
-    const modelFilePath = path.join(__dirname, file)
-    const model = require(modelFilePath).default as typeof Model
-    const { init }: AppSchema<typeof Model> = require(modelFilePath).schema
+    const modelFilePath = path.resolve(__dirname, file)
+    const model: typeof Model = require(modelFilePath).default
+   
+    const schemaFilePath = path.resolve(__dirname, '..', 'schema', file)
+    const { init }: AppSchema<typeof Model> = require(schemaFilePath).schema
 
     init(sequelize, model)
   })
@@ -27,8 +33,8 @@ export function initAllModels(sequelize: Sequelize) {
 
 export function initAllAssociations(models: SequelizeModels) {
   eachFileInDir(__dirname, file => {
-    const modelFilePath = path.join(__dirname, file)
-    const { associate }: AppSchema<typeof Model> = require(modelFilePath).schema
+    const schemaFilePath = path.resolve(__dirname, '..', 'schema', file)
+    const { associate }: AppSchema<typeof Model> = require(schemaFilePath).schema
 
     associate(models)
   })
@@ -36,10 +42,13 @@ export function initAllAssociations(models: SequelizeModels) {
 
 
 export type SequelizeModels = {
-<%_ tables.forEach(table => {
-  const modelName = include('_partials/modelNames.ejs', {
-    modelName: changeCase.pascalCase(table.name),
-  }) -%>
+  <%_ tables.forEach(table => {
+    const modelName = include('_partials/modelNames.ejs', { modelName: changeCase.pascalCase(table.name) }) -%>
   <%= modelName %>: <%= modelName %>Ctor
-<%_ }) -%>
+  <%_ }) -%>
 }
+
+<%_ tables.forEach(table => {
+  const modelName = include('_partials/modelNames.ejs', { modelName: changeCase.pascalCase(table.name) }) -%>
+export type { default as <%= modelName %> } from './<%= changeCase.paramCase(modelName) %>'
+<%_ }) -%>

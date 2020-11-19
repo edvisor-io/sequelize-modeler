@@ -1,0 +1,65 @@
+<%_
+const instanceName = changeCase.camelCase(table.name)
+-%>
+class <%= modelName %> extends Model<
+  <%= modelInterfaceName %>,
+  <%= createAttributeInterfaceName %>
+> implements <%= modelInterfaceName %> {
+  <%_
+  table.columns.forEach((column, columnName) => {
+    const prefix = _.includes(['created', 'modified'], columnName) ? 'readonly ' : ''
+    const propertyName = changeCase.camelCase(columnName)
+    const tsType = include('tsType.ejs', { column })
+    const postfix = (column.allowNull && columnName !== 'created') ? ' | null' : ''
+  -%>
+  public <%= prefix %><%= propertyName %>!: <%= tsType %><%= postfix %>
+<%_ }) -%>
+
+<%_ associations.forEach(({ alias, tsType, isMany }) => { -%>
+  public readonly <%= alias %>?: <%= tsType + (isMany ? '[]' : '') %>
+<%_ }) -%>
+
+<%_
+associations.forEach(({ tsType, associationType, aliasSingular }) => {
+  const loaderName = changeCase.pascalCase(aliasSingular)
+  switch (associationType) {
+    case 'hasOne': {
+      -%>
+  public get<%= loaderName %>!: HasOneGetAssociationMixin<<%= tsType %>>
+  public set<%= loaderName %>!: HasOneSetAssociationMixin<<%= tsType %>, number>
+  public create<%= loaderName %>!: HasOneCreateAssociationMixin<<%= tsType %>>
+      <%_
+      break
+    }
+    case 'hasMany': {
+      -%>
+  public get<%= loaderName %>s!: HasManyGetAssociationsMixin<<%= tsType %>>
+  public add<%= loaderName %>!: HasManyAddAssociationMixin<<%= tsType %>, number>
+  public has<%= loaderName %>!: HasManyHasAssociationMixin<<%= tsType %>, number>
+  public count<%= loaderName %>s!: HasManyCountAssociationsMixin
+  public create<%= loaderName %>!: HasManyCreateAssociationMixin<<%= tsType %>>
+      <%_
+      break
+    }
+    case 'belongsTo': {
+      -%>
+  public get<%= loaderName %>!: BelongsToGetAssociationMixin<<%= tsType %>>
+  public set<%= loaderName %>!: BelongsToSetAssociationMixin<<%= tsType %>, number>
+  public create<%= loaderName %>!: BelongsToCreateAssociationMixin<<%= tsType %>>
+      <%_
+      break
+    }
+    case 'belongsToMany': {
+      -%>
+  public get<%= loaderName %>s!: BelongsToManyGetAssociationsMixin<<%= tsType %>>
+  public add<%= loaderName %>!: BelongsToManyAddAssociationsMixin<<%= tsType %>, number>
+  public has<%= loaderName %>!: BelongsToManyHasAssociationsMixin<<%= tsType %>, number>
+  public count<%= loaderName %>s!: BelongsToManyCountAssociationsMixin
+  public create<%= loaderName %>!: BelongsToManyCreateAssociationMixin<<%= tsType %>>
+      <%_
+      break
+    }
+  }
+})
+-%>
+}

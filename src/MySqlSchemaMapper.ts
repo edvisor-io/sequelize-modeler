@@ -77,6 +77,7 @@ export class MySqlSchemaMapper extends SchemaMapper<
         const target = colsByTable.get(ref.referencedTableName)
         if (!source || !target) return
 
+        // create association on self
         source.associations.push({
           associationType: AssociationType.belongsTo,
           source: sourceTableName,
@@ -84,6 +85,7 @@ export class MySqlSchemaMapper extends SchemaMapper<
           foreignKey: ref.columnName,
         })
 
+        // create 1 of 3 possible associations on target
         if (source.isJunctionTable) {
           const targetRef = sourceSchema.foreignKeyReferences.find(otherRef => otherRef.columnName !== ref.columnName)
           if (!targetRef) return
@@ -139,10 +141,8 @@ export class MySqlSchemaMapper extends SchemaMapper<
 
   protected getUniqueAttribute(columnName: string, indexes: MySqlIndexMetadata[]): string | true | undefined {
     const uniqueIndex = indexes.find((index) => index.unique
-      && !index.primary
       && !!index.fields.find((field) => field.attribute === columnName)
     )
-
 
     if (!uniqueIndex) return
     return (uniqueIndex.fields.length === 1) ? true : uniqueIndex.name
@@ -212,7 +212,7 @@ export class MySqlSchemaMapper extends SchemaMapper<
     ['datetime', 'Date'],
     ['decimal', 'number'],
     ['double', 'number'],
-    ['enum', 'string[]'],
+    ['enum', 'string'],
     ['float', 'number'],
     ['geometry', 'string'],
     ['int', 'number'],
@@ -226,7 +226,7 @@ export class MySqlSchemaMapper extends SchemaMapper<
     ['ntext', 'string'],
     ['numeric', 'number'],
     ['real', 'number'],
-    ['set', 'string[]'],
+    ['set', 'string'],
     ['smallint', 'number'],
     ['text', 'string'],
     ['time', 'string'],

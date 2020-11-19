@@ -1,0 +1,5 @@
+interface <%= associationsInterfaceName %> {
+<%_ associations.forEach(({ alias, tsType, isMany }) => { -%>
+  <%= alias %>: <%= tsType + (isMany ? '[]' : '') %>
+<%_ }) -%>
+}

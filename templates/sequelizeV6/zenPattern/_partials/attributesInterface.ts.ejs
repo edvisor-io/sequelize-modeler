@@ -1,0 +1,18 @@
+<%_
+const parentInterfaces = []
+if (hasCreated) parentInterfaces.push('CreateAttribute')
+if (hasModified) parentInterfaces.push('ModifyAttribute')
+const extendClause = (!_.isEmpty(parentInterfaces)) ? ` extends ${parentInterfaces.join(', ')}` : ''
+-%>
+interface <%= attributesInterfaceName %><%= extendClause %> {
+<%_
+  table.columns.forEach((column, columnName) => {
+    if (_.includes(['created', 'modified'], columnName)) return
+
+    const propertyName = changeCase.camelCase(columnName)
+    const tsType = include('tsType.ejs', { column })
+    const postfix = column.allowNull ? ' | null' : ''
+-%>
+  <%= propertyName %>: <%= tsType %><%= postfix %>
+<%_ }) -%>
+}

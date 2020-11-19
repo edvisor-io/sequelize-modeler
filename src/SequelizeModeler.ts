@@ -62,7 +62,7 @@ export class SequelizeModeler {
   public async run() {
     const {
       templates: rootTemplates,
-      tables: { templates: tableTemplates },
+      tables: { templates: templateNamesOrConfigs },
       sequelize : { dialect }
     } = this.modelerConfig
     if (!dialect) throw new Error('No sequelize.dialect provided in config.')
@@ -73,24 +73,24 @@ export class SequelizeModeler {
     const mapper = new Mapper(this.sequelize)
     const tableDefByTableName = await mapper.mapSchema(await this.filterTables())
 
-    if (!!tableTemplates) {
+    if (!!templateNamesOrConfigs && templateNamesOrConfigs.length > 0) {
       tableDefByTableName.forEach(async (table, tableName) => {
-        await this.renderTemplates(tableTemplates, { table }, tableName)
+        await this.processTemplates(templateNamesOrConfigs, { table }, tableName)
       })
     }
 
     if (!!rootTemplates) {
-      await this.renderTemplates(rootTemplates, { tables: tableDefByTableName }, 'index')
+      await this.processTemplates(rootTemplates, { tables: tableDefByTableName }, 'index')
     }
   }
 
-  protected async renderTemplates(
-    templates: string[],
+  protected async processTemplates(
+    templateNamesOrConfigs: (string | TemplateConfig)[],
     renderData: object,
     defaultFileName: string,
     defaultFileEnding: 'js' | 'ts' = 'ts'
   ) {
-    return Promise.all(templates.map(async (template, templateIndex) => {
+    return Promise.all(templateNamesOrConfigs.map(async (templateNameOrConfig, templateIndex) => {
       const localParams = {
         outputFileName: `${defaultFileName}-${templateIndex}${defaultFileEnding}`,
         skipFile: false
@@ -98,15 +98,31 @@ export class SequelizeModeler {
       const setOutputFileName = (overwriteFileName: string) => { localParams.outputFileName = overwriteFileName }
       const skipFile = () => { localParams.skipFile = true }
       const { getQuote } = Quote
-
-      const modelDefTemplate = await ejs.renderFile(path.resolve(this.cwd, template), {
+      let data = {
         ...renderData,
         setOutputFileName,
         skipFile,
         getQuote,
         changeCase,
         _
-      })
+      }
+
+      const templateFileName = (typeof templateNameOrConfig === 'string') ? templateNameOrConfig : templateNameOrConfig.template
+      if (typeof templateNameOrConfig === 'object') {
+        if (templateNameOrConfig.preprocessor) {
+          const preprocessor: ((data: object) => object) | unknown = require(
+            path.resolve(this.cwd, templateNameOrConfig.preprocessor))
+          if (typeof preprocessor !== 'function') {
+            console.warn('No preprocessor found. Needs to be a default exported function. Skipping preprocessing. ' + templateNameOrConfig.preprocessor)
+          } else {
+            data = {
+              ...preprocessor(data)
+            }
+          }
+        }
+      }
+
+      const modelDefTemplate = await ejs.renderFile(path.resolve(this.cwd, templateFileName), data)
 
       if (localParams.skipFile) return
 
@@ -114,7 +130,7 @@ export class SequelizeModeler {
       const outputDir = path.dirname(outputPath)
 
       if (!fs.existsSync(outputDir)) {
-        await this.mkdir(outputDir)
+        await this.mkdir(outputDir, { recursive: true })
       }
       return this.writeFile(outputPath, modelDefTemplate)
     }))
@@ -144,9 +160,14 @@ export class SequelizeModeler {
 interface ModelerConfig {
   sequelize: Options
   tables: {
-    include: string[] | undefined
-    exclude: string[] | undefined
-    templates: string[] | undefined
+    include?: string[]
+    exclude?: string[]
+    templates?: (string | TemplateConfig)[]
   }
-  templates: string[] | undefined
+  templates?: string[]
+}
+
+interface TemplateConfig {
+  template: string
+  preprocessor?: string
 }
