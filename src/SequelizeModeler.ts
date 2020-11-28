@@ -3,9 +3,11 @@ import ejs from 'ejs'
 import * as fs from 'fs'
 import _, {
   difference,
+  find,
+  includes,
   intersection,
   isNil,
-  isString
+  isString,
 } from 'lodash'
 import * as path from 'path'
 import {
@@ -16,10 +18,13 @@ import {
 import { promisify } from 'util'
 
 import { MySqlSchemaMapper } from './MySqlSchemaMapper'
+import { JunctionRuleCallback } from './SchemaMapper'
+
 
 export class SequelizeModeler {
   protected sequelize: Sequelize
   protected modelerConfig: ModelerConfig
+  protected settings: ModelerSettings
   protected cwd: string
 
   protected mappersByDialect = new Map<Dialect, typeof MySqlSchemaMapper>([
@@ -56,54 +61,102 @@ export class SequelizeModeler {
       this.sequelize = new Sequelize(config.sequelize)
       this.modelerConfig = config
     }
+
+    this.settings = this.createSettings()
+  }
+
+  protected createSettings(): ModelerSettings {
+    const {
+      junctionRules: rawJunctionRules,
+      templates: rawRootTemplates,
+      tables: { templates: rawTemplates },
+      sequelize : { dialect }
+    } = this.modelerConfig
+
+    if (!dialect) throw new Error('No sequelize.dialect provided in config.')
+
+    let junctionRuleCallback = undefined
+    let junctionRules: JunctionRule[] = []
+    if (isNil(rawJunctionRules)) {
+      junctionRules = [JunctionRule.DEFAULT]
+    } else if (rawJunctionRules === true) {
+      junctionRules = [JunctionRule.DEFAULT]
+    } else if (rawJunctionRules === false) {
+        junctionRules = [JunctionRule.OFF]
+    } else {
+      if (includes(rawJunctionRules, 'compositePrimaryOnly')) {
+        junctionRules = [JunctionRule.COMPOSITE_PRIMARY_ONLY]
+      }
+      if (includes(rawJunctionRules, 'compositePrimary')) {
+        junctionRules.push(JunctionRule.COMPOSITE_PRIMARY)
+      }
+      if (includes(rawJunctionRules, 'primaryAndTimestampOnly')) {
+        junctionRules.push(JunctionRule.PRIMARY_AND_TIMESTAMP_ONLY)
+      }
+
+      const callbackRule = find(rawJunctionRules,
+        rule => (typeof rule === 'object' && isString(rule.callback))) as { callback: string } | undefined
+      if (callbackRule) {
+        junctionRules.push(JunctionRule.CALLBACK)
+        const callbackPath = path.resolve(this.cwd, callbackRule.callback)
+        junctionRuleCallback = require(callbackPath)
+      }
+    }
+
+    const mapToConfig = (templateNamesOrConfigs?: (string | TemplateConfig)[]) => {
+      if (!templateNamesOrConfigs) return []
+
+      return templateNamesOrConfigs.map(templateOrConfig => (
+        typeof templateOrConfig === 'string' ? {
+          template: templateOrConfig
+        } : templateOrConfig
+      ))
+    }
+
+    return {
+      dialect,
+      junctionRules,
+      junctionRuleCallback,
+      rootTemplates: mapToConfig(rawRootTemplates),
+      templates: mapToConfig(rawTemplates)
+    }
+
   }
 
   public async run() {
-    const {
-      templates: rootTemplates,
-      tables: { templates: templateNamesOrConfigs },
-      sequelize : { dialect }
-    } = this.modelerConfig
-    if (!dialect) throw new Error('No sequelize.dialect provided in config.')
-
-    const Mapper = this.mappersByDialect.get(dialect)
+    const Mapper = this.mappersByDialect.get(this.settings.dialect)
     if (!Mapper) throw new Error(`Dialect not supported. Why not implement a Mapper class! (see README)`)
 
-    const mapper = new Mapper(this.sequelize)
+    const mapper = new Mapper(this.sequelize, this.settings)
     const tableDefByTableName = await mapper.mapSchema(await this.filterTables())
 
-    const getTemplateName = (templateNameOrConfig: (string | TemplateConfig)) => (
-      typeof templateNameOrConfig === 'string' ?
-        templateNameOrConfig :
-        templateNameOrConfig.template
-    )
 
-    return Promise.all([
+    await Promise.all([
       Promise.resolve().then(() => {
-        if (!templateNamesOrConfigs) return
+        if (!this.settings.templates) return
 
-        return Promise.all(templateNamesOrConfigs.map(async (templateNameOrConfig, templateIndex) => {
-          const preprocessor = this.getPreprocessor(templateNameOrConfig)
+        return Promise.all(this.settings.templates.map(async (templateConfig, templateIndex) => {
+          const preprocessor = this.getPreprocessor(templateConfig)
 
           tableDefByTableName.forEach(async (table, tableName) => {
             const defaultFileName = `${tableName}-${templateIndex}.ts`
 
-            await this.processTemplates(
-              getTemplateName(templateNameOrConfig), { table }, preprocessor, defaultFileName)
+            await this.processTemplates(templateConfig.template, { table }, preprocessor, defaultFileName)
           })
         }))
       }),
       Promise.resolve().then(() => {
-        if (!rootTemplates) return
+        if (!this.settings.rootTemplates) return
 
-        return Promise.all(rootTemplates.map(async (templateNameOrConfig) => {
-          const preprocessor = this.getPreprocessor(templateNameOrConfig)
+        return Promise.all(this.settings.rootTemplates.map(async (templateConfig) => {
+          const preprocessor = this.getPreprocessor(templateConfig)
 
-          await this.processTemplates(
-            getTemplateName(templateNameOrConfig), { tables: tableDefByTableName }, preprocessor)
+          await this.processTemplates(templateConfig.template, { tables: tableDefByTableName }, preprocessor)
         }))
       })
     ])
+
+    this.sequelize.close()
   }
 
   protected async processTemplates(
@@ -128,7 +181,7 @@ export class SequelizeModeler {
 
     const modelDefTemplate = await ejs.renderFile(
       path.resolve(this.cwd, templateFileName),
-      (!preprocessor) ? data : await preprocessor(data)
+      (!preprocessor) ? data : await preprocessor({...data, sequelize: this.sequelize })
     )
 
     if (localParams.skipFile) return
@@ -143,11 +196,10 @@ export class SequelizeModeler {
     return this.writeFile(outputPath, modelDefTemplate)
   }
 
-  protected getPreprocessor(templateNameOrConfig: (string | TemplateConfig)) {
-    if (typeof templateNameOrConfig === 'string') return
-    if (!templateNameOrConfig.preprocessor) return
+  protected getPreprocessor(templateConfig: TemplateConfig) {
+    if (!templateConfig.preprocessor) return
 
-    const preprocessorPath = path.resolve(this.cwd, templateNameOrConfig.preprocessor)
+    const preprocessorPath = path.resolve(this.cwd, templateConfig.preprocessor)
     const preprocessor: (data: object) => Promise<object> = require(preprocessorPath)
 
     if (typeof preprocessor !== 'function') {
@@ -180,8 +232,23 @@ export class SequelizeModeler {
   protected mkdir = promisify(fs.mkdir)
 }
 
+export enum JunctionRule {
+  OFF,
+  COMPOSITE_PRIMARY_ONLY,
+  COMPOSITE_PRIMARY,
+  PRIMARY_AND_TIMESTAMP_ONLY,
+  CALLBACK,
+  DEFAULT = COMPOSITE_PRIMARY_ONLY
+}
+
 interface ModelerConfig {
   sequelize: Options
+  junctionRules?: (
+    'compositePrimary' |
+    'compositePrimaryOnly' |
+    'primaryAndTimestampOnly' |
+    { callback: string }
+  )[] | boolean,
   tables: {
     include?: string[]
     exclude?: string[]
@@ -193,4 +260,16 @@ interface ModelerConfig {
 interface TemplateConfig {
   template: string
   preprocessor?: string
+}
+
+export interface ModelerSettings<
+  IndexMetadata extends object = {},
+  ForeignKeyMetadata extends object= {},
+  ColumnDescriptionExtra extends object = {}
+> {
+  dialect: Dialect
+  junctionRules: JunctionRule[]
+  junctionRuleCallback?: JunctionRuleCallback<IndexMetadata, ForeignKeyMetadata, ColumnDescriptionExtra>
+  rootTemplates?: TemplateConfig[]
+  templates?: TemplateConfig[]
 }

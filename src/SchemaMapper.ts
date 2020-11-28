@@ -8,6 +8,7 @@ import {
   ColumnsDescription,
   Sequelize
 } from 'sequelize'
+import { ModelerSettings } from './SequelizeModeler'
 
 export abstract class SchemaMapper<
   IndexMetadata extends object = {},
@@ -16,7 +17,7 @@ export abstract class SchemaMapper<
 > {
   protected tableSchemasByName: TableSchemasByTableName<IndexMetadata, ForeignKeyMetadata> = new Map()
 
-  constructor(protected sequelize: Sequelize) {
+  constructor(protected sequelize: Sequelize, protected settings: ModelerSettings<any, any, any>) {
   }
 
   /**
@@ -37,8 +38,6 @@ export abstract class SchemaMapper<
         foreignKeyReferences: (await queryInterface.getForeignKeyReferencesForTable(tableName)) as any
       })
     }))
-
-    this.sequelize.close()
   }
 
   protected unquote(input: string) {
@@ -117,8 +116,10 @@ export type Association = {
  * The column description output generated from parsing the input of one column
  * @param ColumnDescriptionExtra any extra dialect-specig column description
  */
-export type ParsedColumnDescription<ColumnDescriptionExtra = {}> = 
-  ColumnDescription & EssentialColumnDescription & ColumnDescriptionExtra
+export type ParsedColumnDescription<ColumnDescriptionExtra = {}> =
+  ColumnDescription &
+  EssentialColumnDescription &
+  ColumnDescriptionExtra
 
 export type EssentialColumnDescription = {
   ormType: string | null
@@ -132,3 +133,12 @@ export type ParsedColumnReference = {
   tableName: string
   key: string
 }
+
+export type JunctionRuleCallback<
+  IndexMetadata extends object = {},
+  ForeignKeyMetadata extends object= {},
+  ColumnDescriptionExtra extends object = {}
+> = (
+  schema: TableMetadata<IndexMetadata[], ForeignKeyMetadata[]>,
+  cols: ParsedColumnDescriptionsByColumnName<ColumnDescriptionExtra>,
+) => Promise<boolean>

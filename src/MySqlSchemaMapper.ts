@@ -1,11 +1,12 @@
 import {
   defaultTo,
   drop,
+  every,
   forEach,
   forOwn,
   includes,
   isNull,
-  isString
+  isString,
 } from 'lodash'
 import {
   ColumnDescription,
@@ -15,19 +16,21 @@ import {
 import {
   AssociationType,
   EssentialColumnDescription,
+  JunctionRuleCallback,
   ParsedColumnDescriptionsByColumnName,
   ParsedColumnReference,
   ParsedColumnsDescriptionsByTableName,
-  SchemaMapper
+  SchemaMapper,
 } from './SchemaMapper'
+import { JunctionRule, ModelerSettings } from './SequelizeModeler'
 
 export class MySqlSchemaMapper extends SchemaMapper<
   MySqlIndexMetadata[],
   MySqlForeignKeyReferences[],
   MySqlColumnDescriptionExtra
 > {
-  constructor(sequelize: Sequelize) {
-    super(sequelize)
+  constructor(sequelize: Sequelize, settings: MySqlModelerSettings) {
+    super(sequelize, settings)
   }
 
   public async mapSchema(tableNames: string[]) {
@@ -35,33 +38,35 @@ export class MySqlSchemaMapper extends SchemaMapper<
 
     const parsedColumnsDescriptionsByTableName: MySqlParsedColumnsDescriptionsByTableName = new Map()
 
-    Array.from(this.tableSchemasByName.entries()).map((([tableName, schema]) => {
-      const parsedDescriptionsByColumnName: MySqlParsedColumnDescriptionsByColumnName = new Map()
+    await Promise.all(Array.from(this.tableSchemasByName.entries())
+      .sort(([ tableNameLeft ], [ tableNameRight ]) => tableNameLeft > tableNameRight ? 1 : -1)
+      .map(async([ tableName, schema ]) => {
+        const parsedDescriptionsByColumnName: MySqlParsedColumnDescriptionsByColumnName = new Map()
 
-      forOwn(schema.columnsDescription, (description, columnName) => {
-        const descriptionExtras = this.mapExtraColumnDescription(description)
-        const { dbType } = descriptionExtras
-        const essentialDescription: EssentialColumnDescription = {
-          tsType: dbType ? defaultTo(MySqlSchemaMapper.tsTypesByDbType.get(dbType), null) : null,
-          ormType: dbType ? defaultTo(MySqlSchemaMapper.ormTypesByDbType.get(dbType), null) : null
-        }
+        forOwn(schema.columnsDescription, (description, columnName) => {
+          const descriptionExtras = this.mapExtraColumnDescription(description)
+          const { dbType } = descriptionExtras
+          const essentialDescription: EssentialColumnDescription = {
+            tsType: dbType ? defaultTo(MySqlSchemaMapper.tsTypesByDbType.get(dbType), null) : null,
+            ormType: dbType ? defaultTo(MySqlSchemaMapper.ormTypesByDbType.get(dbType), null) : null
+          }
 
-        parsedDescriptionsByColumnName.set(columnName, {
-          ...description,
-          ...essentialDescription,
-          ...descriptionExtras,
-          unique: this.getUniqueAttribute(columnName, schema.indexes),
-          reference: this.getReference(columnName, schema.foreignKeyReferences)
+          parsedDescriptionsByColumnName.set(columnName, {
+            ...description,
+            ...essentialDescription,
+            ...descriptionExtras,
+            unique: this.getUniqueAttribute(columnName, schema.indexes),
+            reference: this.getReference(columnName, schema.foreignKeyReferences)
+          })
         })
-      })
 
-      parsedColumnsDescriptionsByTableName.set(tableName, {
-        name: tableName,
-        columns: parsedDescriptionsByColumnName,
-        isJunctionTable: this.isJunctionTable(parsedDescriptionsByColumnName, schema.foreignKeyReferences),
-        associations: []
-      })
-    }))
+        parsedColumnsDescriptionsByTableName.set(tableName, {
+          name: tableName,
+          columns: parsedDescriptionsByColumnName,
+          isJunctionTable: await this.isJunctionTable(schema, parsedDescriptionsByColumnName),
+          associations: []
+        })
+      }))
 
     this.addAssociations(parsedColumnsDescriptionsByTableName)
 
@@ -125,20 +130,65 @@ export class MySqlSchemaMapper extends SchemaMapper<
     }))
   }
 
-  protected isJunctionTable(
+  protected isJunctionTable: MySqlJunctionRuleCallback = async(schema, cols) => {
+    const {
+      settings: {
+        junctionRules: rules,
+        junctionRuleCallback: callback
+      }
+    } = this
+
+    const callbacksByRule = new Map([
+      [ JunctionRule.COMPOSITE_PRIMARY, this.compositePrimaryRule ],
+      [ JunctionRule.COMPOSITE_PRIMARY_ONLY, this.compositePrimaryOnlyRule ],
+      [ JunctionRule.PRIMARY_AND_TIMESTAMP_ONLY, this.primaryAndTimestampOnlyRule ],
+      [ JunctionRule.CALLBACK, callback ],
+    ])
+
+    if (includes(rules, JunctionRule.OFF)) return false
+
+    return rules.reduce(async (isJunction, rule) => {
+      const callback = callbacksByRule.get(rule)
+      if (!callback) return isJunction
+
+      return await isJunction || await callback(schema, cols)
+    }, Promise.resolve(false))
+  }
+
+  protected compositePrimaryRule: MySqlJunctionRuleCallback = async(schema, cols) => {
+    const primaryKeys = this.getPrimaryKeys(cols)
+    const primaryForeignKeys = schema.foreignKeyReferences.filter(ref => includes(primaryKeys, ref.columnName))
+
+    return primaryKeys.length  === 2 && primaryForeignKeys.length === 2
+  }
+
+  protected compositePrimaryOnlyRule: MySqlJunctionRuleCallback = async(schema, cols) => {
+    return await this.compositePrimaryRule(schema, cols) && cols.size === 2
+  }
+
+  protected primaryAndTimestampOnlyRule: MySqlJunctionRuleCallback = async(schema, cols) => {
+    const primaryKeys = this.getPrimaryKeys(cols)
+    const nonPrimaryForeignKeys = schema.foreignKeyReferences
+      .map(ref => ref.columnName)
+      .filter(columnName => !includes(primaryKeys, columnName))
+
+    const areOthersTimestampOnly = every(Array.from(cols.entries()), ([ columnName, description ]) => {
+      return includes(primaryKeys, columnName)
+        || includes(nonPrimaryForeignKeys, columnName)
+        || description.tsType === 'Date'
+    })
+
+    return primaryKeys.length  === 1 && nonPrimaryForeignKeys.length === 2 && areOthersTimestampOnly
+  }
+
+  protected getPrimaryKeys(
     cols: ParsedColumnDescriptionsByColumnName<MySqlColumnDescriptionExtra>,
-    refs: MySqlForeignKeyReferences[]
-  ): boolean {
-    const primaryKeys = Array.from(cols.entries()).reduce((colNames, [colName, description]) => {
+  ): string[] {
+    return Array.from(cols.entries()).reduce((colNames, [colName, description]) => {
       if (description.primaryKey) colNames.push(colName)
       return colNames
     }, [] as string[])
-
-    const primaryRefs = refs.map(ref => includes(primaryKeys, ref.columnName))
-
-    return primaryKeys.length  === 2 && primaryRefs.length === 2
   }
-
   protected getUniqueAttribute(columnName: string, indexes: MySqlIndexMetadata[]): string | true | undefined {
     const uniqueIndex = indexes.find((index) => index.unique
       && !!index.fields.find((field) => field.attribute === columnName)
@@ -411,6 +461,10 @@ interface MySqlForeignKeyReferences {
 type MySqlParsedColumnsDescriptionsByTableName = ParsedColumnsDescriptionsByTableName<MySqlColumnDescriptionExtra>
 
 type MySqlParsedColumnDescriptionsByColumnName = ParsedColumnDescriptionsByColumnName<MySqlColumnDescriptionExtra>
+
+type MySqlModelerSettings  = ModelerSettings<MySqlIndexMetadata, MySqlForeignKeyReferences, MySqlColumnDescriptionExtra>
+
+type MySqlJunctionRuleCallback = JunctionRuleCallback<MySqlIndexMetadata, MySqlForeignKeyReferences, MySqlColumnDescriptionExtra>
 
 /**
  * The extra description for each column the Mapper needs to provide, as Sequelize does not
