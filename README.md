@@ -31,11 +31,13 @@ yarn add sequelize-modeler --dev
 
 
 ### Config
-Modeler uses Sequelize to read and analyze your database schema. All you need are the [connection settings](https://sequelize.org/master/manual/getting-started.html#connecting-to-a-database) and a template you want to render. Modeler comes with some common templates that you can use directly. If they don't quiet fit you bill, simply use them as a starting point to create you own ones.
+Modeler uses Sequelize to read and analyze your database schema. All you need are the [connection settings](https://sequelize.org/master/manual/getting-started.html#connecting-to-a-database) and a template you want to render. Modeler comes with some common templates that you can use directly. If they don't quiet fit you bill, simply use them as a starting point to create your own ones.
 
-```json
+```ts
+// modeler.config.json
 {
-  "sequelize": { -- the sequelize version 6 connection object
+  // REQUIRED: the sequelize version 6 connection object
+  "sequelize": { 
     "username": "root",
     "password": "",
     "database": "foo",
@@ -43,16 +45,39 @@ Modeler uses Sequelize to read and analyze your database schema. All you need ar
     "dialect": "mysql"
   },
   "tables": {
-    "include": ["bar"], -- tables you want to feed to your templates. ATTN: [] === no op
-    "exclude": [], -- the "I want all but X and Y" scenario
-    "templates": [ -- these templates get rendered for each table. See below what data they get.
-      "templates/sequelize_V6/model.ts.ejs", -- the output filename can be composed within the template.
-      "templates/sequelize_V6/association.ts.ejs"
+    // List the tables you want to feed to your templates, aka a white-list. (Note: [] == include nothing)
+    "include": ["bar"],
+    // A black-list for the "I want all tables but X and Y" scenario
+    "exclude": [],
+    // The templates you list here get rendered for each table. See below what data they get.
+    "templates": [ 
+      // EITHER provide a local template file.
+      "templates/sequelize_V6/model.ts.ejs",
+      // OR provide a configuration object for more advanced options
+      {
+        "template": "local/path/complexTemplate.ejs",
+        // An optional JS function to pre-process your data. See below for details.
+        "preprocessor": "local/path/complexTemplatePreprocessor.js",
+        // Overwrite exisiting files. Default: `true`
+        "overwrite": false
+      }
     ]
   },
-  "templates": [ -- these templates get rendered once. See below what data they get.
+  // these templates get rendered once and the same options as above are supported. See below what data they get.
+  "templates": [
     "templates/sequelize_V6/index.ts.ejs"
-  ]
+  ],
+  // This is for fine-tuning Modelers ability to identify "junction tables". See below for details.
+  "junctionRules": [
+    "compositePrimaryOnly", // DEFAULT
+    "compositePrimary",
+    "primaryAndTimestampOnly",
+    {
+      "callback": "local/path/myJuntionRuleCallback.js"
+    }
+  ],
+  // This does not create any junction models at all
+  "junctionRules": false
 }
 ```
 
@@ -263,16 +288,23 @@ const requireLocal = (dep) => require(path.resolve(process.cwd(), 'node_modules'
 
 const inflection = requireLocal('inflection') // dependencies of your project need to be resolved like so
 
-module.exports = async function(data /* the data object created by Modeler */) {
+module.exports = async function({
+  sequelize, /* ONLY a preprocessor gets an initialized sequelize object for DB queries (NOT available in a template)*/
+  ...data /* the data object created by Modeler */
+}) {
   const { table, changeCase } = data
 
   return {
-    // in most cases you probably want to add some properties to the data object, rather than replacing it
+    // in most cases you probably want to add some properties to the data object, rather than replacing it:
     modelNamePlural: inflection.pluralize(changeCase.pascalCase(table.name)),
     ...data
   }
 }
 ```
+interface TemplateConfig {
+  template: string
+  preprocessor?: string
+}
 
 ### How are associations detected?
 Associations are the Sequelize equivalent of MySql foreign key relationships. You can find more details about them [here](https://sequelize.org/master/manual/assocs.html).
@@ -282,7 +314,7 @@ Modeler tries to guess the relation of 2 models by examining the foreign key rel
 
    Target model association: *hasMany* or *hasOne*
 
- - **belongsToMany**: There are 2 foreign keys on a [junction table](https://en.wikipedia.org/wiki/Associative_entity) and those keys are also constrained by a composite unique index (a primary index is always also a unique index). The junction table gets a *belongsTo* association to both, the source and the target model.
+ - **belongsToMany**: There are 2 foreign keys on a [junction table](https://en.wikipedia.org/wiki/Associative_entity) and those keys are also constrained by a composite unique index (a primary index is always also a unique index). The junction table gets a *belongsTo* association to both, the source and the target model. See below on how junction tables are detected.
 
    Target model association: *belongsToMany*
 
@@ -295,6 +327,56 @@ Modeler tries to guess the relation of 2 models by examining the foreign key rel
    Target model association: *belongsTo*
 
 
+### How are junction tables detected?
+Modeler has 3 build-in rules you can chose from and combine, if necessary. If you pick more than one rule, any one matching
+rule will identify a table as a junction table (rules are ORed together). These are the build-in rules:
+
+- **compositePrimaryOnly**: This is the default. If, and only if the table has exactly 2 columns and they form a composite primary
+key and also refer to 2 other tables, Modeler will identify the table as a junction table. Example:
+```sql
+CREATE TABLE `student_teacher` (
+  `student_id` int(10) unsigned NOT NULL,
+  `teacher_id` int(10) unsigned NOT NULL,
+  PRIMARY KEY (`student_id`,`teacher_id`),
+  CONSTRAINT `fk1` FOREIGN KEY (`student_id`) REFERENCES `student` (`student_id`) ON DELETE CASCADE ON UPDATE NO ACTION,
+  CONSTRAINT `fk2` FOREIGN KEY (`teacher_id`) REFERENCES `teacher` (`teacher_id`) ON DELETE CASCADE ON UPDATE NO ACTION
+)
+```
+- **compositePrimary**: This is a more relaxed rule of the above. It allows to have any other column, but the composite primary
+key is still required. Example:
+```sql
+CREATE TABLE `student_teacher` (
+  `student_id` int(10) unsigned NOT NULL,
+  `teacher_id` int(10) unsigned NOT NULL,
+  `created_at` datetime NOT NULL,
+  PRIMARY KEY (`student_id`,`teacher_id`),
+  CONSTRAINT `fk1` FOREIGN KEY (`student_id`) REFERENCES `student` (`student_id`) ON DELETE CASCADE ON UPDATE NO ACTION,
+  CONSTRAINT `fk2` FOREIGN KEY (`teacher_id`) REFERENCES `teacher` (`teacher_id`) ON DELETE CASCADE ON UPDATE NO ACTION
+)
+```
+- **primaryAndTimestampOnly**: This rule requires a table to have any 2 foreign key relations. Other columns, however, can only
+be primary key or timestamp columns. Example:
+```sql
+CREATE TABLE `student_teacher` (
+  `student_teacher_id` int(10) unsigned NOT NULL,
+  `student_id` int(10) unsigned NOT NULL,
+  `teacher_id` int(10) unsigned NOT NULL,
+  `created_at` datetime NOT NULL,
+  PRIMARY KEY (`student_teacher_id`),
+  CONSTRAINT `fk1` FOREIGN KEY (`student_id`) REFERENCES `student` (`student_id`) ON DELETE CASCADE ON UPDATE NO ACTION,
+  CONSTRAINT `fk2` FOREIGN KEY (`teacher_id`) REFERENCES `teacher` (`teacher_id`) ON DELETE CASCADE ON UPDATE NO ACTION
+)
+```
+- **custom callback**: It is also possible to provide a custom callback that is called for every table. It gets the entire
+schema and the column descriptions of the table in question as a parameter. The funciton should return a boolean to indicate
+if the table is a junction table.
+```ts
+// local/path/myJunctionCallback.js
+module.exports = async function (
+  schema, // TableMetadata<IndexMetadata[], ForeignKeyMetadata[]>,
+  cols // ParsedColumnDescriptionsByColumnName<ColumnDescriptionExtra>,
+) => Promise<boolean>
+```
 
 ## Todos
  - associations onDeleted/onUpdated

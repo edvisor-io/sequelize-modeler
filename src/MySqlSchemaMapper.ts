@@ -38,35 +38,33 @@ export class MySqlSchemaMapper extends SchemaMapper<
 
     const parsedColumnsDescriptionsByTableName: MySqlParsedColumnsDescriptionsByTableName = new Map()
 
-    await Promise.all(Array.from(this.tableSchemasByName.entries())
-      .sort(([ tableNameLeft ], [ tableNameRight ]) => tableNameLeft > tableNameRight ? 1 : -1)
-      .map(async([ tableName, schema ]) => {
-        const parsedDescriptionsByColumnName: MySqlParsedColumnDescriptionsByColumnName = new Map()
+    await Promise.all([...this.tableSchemasByName.entries()].map(async ([ tableName, schema ]) => {
+      const parsedDescriptionsByColumnName: MySqlParsedColumnDescriptionsByColumnName = new Map()
 
-        forOwn(schema.columnsDescription, (description, columnName) => {
-          const descriptionExtras = this.mapExtraColumnDescription(description)
-          const { dbType } = descriptionExtras
-          const essentialDescription: EssentialColumnDescription = {
-            tsType: dbType ? defaultTo(MySqlSchemaMapper.tsTypesByDbType.get(dbType), null) : null,
-            ormType: dbType ? defaultTo(MySqlSchemaMapper.ormTypesByDbType.get(dbType), null) : null
-          }
+      forOwn(schema.columnsDescription, (description, columnName) => {
+        const descriptionExtras = this.mapExtraColumnDescription(description)
+        const { dbType } = descriptionExtras
+        const essentialDescription: EssentialColumnDescription = {
+          tsType: dbType ? defaultTo(MySqlSchemaMapper.tsTypesByDbType.get(dbType), null) : null,
+          ormType: dbType ? defaultTo(MySqlSchemaMapper.ormTypesByDbType.get(dbType), null) : null
+        }
 
-          parsedDescriptionsByColumnName.set(columnName, {
-            ...description,
-            ...essentialDescription,
-            ...descriptionExtras,
-            unique: this.getUniqueAttribute(columnName, schema.indexes),
-            reference: this.getReference(columnName, schema.foreignKeyReferences)
-          })
+        parsedDescriptionsByColumnName.set(columnName, {
+          ...description,
+          ...essentialDescription,
+          ...descriptionExtras,
+          unique: this.getUniqueAttribute(columnName, schema.indexes),
+          reference: this.getReference(columnName, schema.foreignKeyReferences)
         })
+      })
 
-        parsedColumnsDescriptionsByTableName.set(tableName, {
-          name: tableName,
-          columns: parsedDescriptionsByColumnName,
-          isJunctionTable: await this.isJunctionTable(schema, parsedDescriptionsByColumnName),
-          associations: []
-        })
-      }))
+      parsedColumnsDescriptionsByTableName.set(tableName, {
+        name: tableName,
+        columns: parsedDescriptionsByColumnName,
+        isJunctionTable: await this.isJunctionTable(schema, parsedDescriptionsByColumnName),
+        associations: []
+      })
+    }))
 
     this.addAssociations(parsedColumnsDescriptionsByTableName)
 
@@ -90,7 +88,6 @@ export class MySqlSchemaMapper extends SchemaMapper<
           foreignKey: ref.columnName,
         })
 
-        // create 1 of 3 possible associations on target
         if (source.isJunctionTable) {
           const targetRef = sourceSchema.foreignKeyReferences.find(otherRef => otherRef.columnName !== ref.columnName)
           if (!targetRef) return
@@ -106,25 +103,24 @@ export class MySqlSchemaMapper extends SchemaMapper<
             foreignKey: ref.columnName,
             otherKey: targetRef.columnName,
           })
-        } else {
-          const sourceDesc = source.columns.get(ref.columnName)
-          const isColUnique = (sourceDesc && sourceDesc.unique) === true
+        }
 
-          if (isColUnique) {
-            target.associations.push({
-              associationType: AssociationType.hasOne,
-              source: target.name,
-              target: sourceTableName,
-              foreignKey: ref.columnName,
-            })
-          } else {
-            target.associations.push({
-              associationType: AssociationType.hasMany,
-              source: target.name,
-              target: sourceTableName,
-              foreignKey: ref.columnName,
-            })
-          }
+        const sourceRef = source.columns.get(ref.columnName)
+        const isColUnique = (sourceRef && sourceRef.unique) === true
+        if (isColUnique) {
+          target.associations.push({
+            associationType: AssociationType.hasOne,
+            source: target.name,
+            target: sourceTableName,
+            foreignKey: ref.columnName,
+          })
+        } else {
+          target.associations.push({
+            associationType: AssociationType.hasMany,
+            source: target.name,
+            target: sourceTableName,
+            foreignKey: ref.columnName,
+          })
         }
       })
     }))
@@ -189,6 +185,7 @@ export class MySqlSchemaMapper extends SchemaMapper<
       return colNames
     }, [] as string[])
   }
+
   protected getUniqueAttribute(columnName: string, indexes: MySqlIndexMetadata[]): string | true | undefined {
     const uniqueIndex = indexes.find((index) => index.unique
       && !!index.fields.find((field) => field.attribute === columnName)

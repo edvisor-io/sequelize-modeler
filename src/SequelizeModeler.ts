@@ -136,12 +136,10 @@ export class SequelizeModeler {
         if (!this.settings.templates) return
 
         return Promise.all(this.settings.templates.map(async (templateConfig, templateIndex) => {
-          const preprocessor = this.getPreprocessor(templateConfig)
-
           tableDefByTableName.forEach(async (table, tableName) => {
             const defaultFileName = `${tableName}-${templateIndex}.ts`
 
-            await this.processTemplates(templateConfig.template, { table }, preprocessor, defaultFileName)
+            await this.processTemplates(templateConfig, { table }, defaultFileName)
           })
         }))
       }),
@@ -149,9 +147,7 @@ export class SequelizeModeler {
         if (!this.settings.rootTemplates) return
 
         return Promise.all(this.settings.rootTemplates.map(async (templateConfig) => {
-          const preprocessor = this.getPreprocessor(templateConfig)
-
-          await this.processTemplates(templateConfig.template, { tables: tableDefByTableName }, preprocessor)
+          await this.processTemplates(templateConfig, { tables: tableDefByTableName })
         }))
       })
     ])
@@ -160,10 +156,9 @@ export class SequelizeModeler {
   }
 
   protected async processTemplates(
-    templateFileName: string,
+    templateConfig: TemplateConfig,
     renderData: object,
-    preprocessor?: (data: object) => Promise<object>,
-    defaultOutputFileName: string = templateFileName,
+    defaultOutputFileName: string = templateConfig.template,
   ) {
     const localParams = {
       outputFileName: defaultOutputFileName,
@@ -179,14 +174,16 @@ export class SequelizeModeler {
       _
     }
 
+    const preprocessor = this.getPreprocessor(templateConfig)
     const modelDefTemplate = await ejs.renderFile(
-      path.resolve(this.cwd, templateFileName),
+      path.resolve(this.cwd, templateConfig.template),
       (!preprocessor) ? data : await preprocessor({...data, sequelize: this.sequelize })
     )
 
     if (localParams.skipFile) return
 
     const outputPath = path.resolve(this.cwd, localParams.outputFileName)
+    if (templateConfig.overwrite === false && fs.existsSync(outputPath)) return
 
     const outputDir = path.dirname(outputPath)
     if (!fs.existsSync(outputDir)) {
@@ -260,6 +257,7 @@ interface ModelerConfig {
 interface TemplateConfig {
   template: string
   preprocessor?: string
+  overwrite?: boolean
 }
 
 export interface ModelerSettings<
